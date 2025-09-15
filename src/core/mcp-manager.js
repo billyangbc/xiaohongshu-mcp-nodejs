@@ -1,809 +1,931 @@
 /**
- * MCP管理器
- * 实现MCP协议的核心功能，处理JSON-RPC 2.0通信
+ * MCP管理器 - 处理MCP协议的核心逻辑
+ * 实现JSON-RPC 2.0协议，提供小红书操作的标准MCP接口
  */
 
 const { EventEmitter } = require('events');
 const logger = require('../utils/logger');
 
 class MCPManager extends EventEmitter {
-  constructor(taskManager, databaseManager) {
+  constructor(options) {
     super();
-    this.taskManager = taskManager;
-    this.db = databaseManager;
+    this.dbManager = options.dbManager;
+    this.taskExecutor = options.taskExecutor;
+    this.browserManager = options.browserManager;
+    this.config = options.config;
+    this.logger = logger;
+    
     this.methods = new Map();
-    this.notifications = new Map();
+    this.sessions = new Map();
+    this.subscriptions = new Map();
+    
     this.initializeMethods();
   }
 
   /**
-   * 初始化MCP方法
+   * 初始化MCP方法映射
    */
   initializeMethods() {
     // 账号管理相关方法
-    this.registerMethod('accounts.create', this.createAccount.bind(this));
-    this.registerMethod('accounts.list', this.listAccounts.bind(this));
-    this.registerMethod('accounts.get', this.getAccount.bind(this));
-    this.registerMethod('accounts.update', this.updateAccount.bind(this));
-    this.registerMethod('accounts.delete', this.deleteAccount.bind(this));
-    this.registerMethod('accounts.login', this.loginAccount.bind(this));
-    this.registerMethod('accounts.logout', this.logoutAccount.bind(this));
-
-    // 任务管理相关方法
-    this.registerMethod('tasks.create', this.createTask.bind(this));
-    this.registerMethod('tasks.list', this.listTasks.bind(this));
-    this.registerMethod('tasks.get', this.getTask.bind(this));
-    this.registerMethod('tasks.cancel', this.cancelTask.bind(this));
-    this.registerMethod('tasks.delete', this.deleteTask.bind(this));
+    this.methods.set('xiaohongshu.account.list', this.listAccounts.bind(this));
+    this.methods.set('xiaohongshu.account.create', this.createAccount.bind(this));
+    this.methods.set('xiaohongshu.account.update', this.updateAccount.bind(this));
+    this.methods.set('xiaohongshu.account.delete', this.deleteAccount.bind(this));
+    this.methods.set('xiaohongshu.account.login', this.loginAccount.bind(this));
+    this.methods.set('xiaohongshu.account.logout', this.logoutAccount.bind(this));
+    this.methods.set('xiaohongshu.account.status', this.getAccountStatus.bind(this));
 
     // 内容发布相关方法
-    this.registerMethod('posts.create', this.createPost.bind(this));
-    this.registerMethod('posts.update', this.updatePost.bind(this));
-    this.registerMethod('posts.delete', this.deletePost.bind(this));
-    this.registerMethod('posts.list', this.listPosts.bind(this));
-    this.registerMethod('posts.get', this.getPost.bind(this));
-
-    // 互动相关方法
-    this.registerMethod('comments.create', this.createComment.bind(this));
-    this.registerMethod('comments.delete', this.deleteComment.bind(this));
-    this.registerMethod('likes.add', this.addLike.bind(this));
-    this.registerMethod('likes.remove', this.removeLike.bind(this));
-    this.registerMethod('follows.add', this.addFollow.bind(this));
-    this.registerMethod('follows.remove', this.removeFollow.bind(this));
+    this.methods.set('xiaohongshu.post.create', this.createPost.bind(this));
+    this.methods.set('xiaohongshu.post.publish', this.publishPost.bind(this));
+    this.methods.set('xiaohongshu.post.list', this.listPosts.bind(this));
+    this.methods.set('xiaohongshu.post.delete', this.deletePost.bind(this));
+    this.methods.set('xiaohongshu.post.update', this.updatePost.bind(this));
 
     // 数据采集相关方法
-    this.registerMethod('data.scrape_user', this.scrapeUser.bind(this));
-    this.registerMethod('data.scrape_post', this.scrapePost.bind(this));
-    this.registerMethod('data.scrape_comments', this.scrapeComments.bind(this));
-    this.registerMethod('data.search_posts', this.searchPosts.bind(this));
-    this.registerMethod('data.get_trending', this.getTrending.bind(this));
+    this.methods.set('xiaohongshu.data.search', this.searchContent.bind(this));
+    this.methods.set('xiaohongshu.data.user', this.getUserInfo.bind(this));
+    this.methods.set('xiaohongshu.data.post', this.getPostInfo.bind(this));
+    this.methods.set('xiaohongshu.data.comments', this.getComments.bind(this));
+    this.methods.set('xiaohongshu.data.trending', this.getTrending.bind(this));
 
-    // 系统相关方法
-    this.registerMethod('system.status', this.getSystemStatus.bind(this));
-    this.registerMethod('system.stats', this.getSystemStats.bind(this));
-    this.registerMethod('system.config', this.getSystemConfig.bind(this));
+    // 任务管理相关方法
+    this.methods.set('xiaohongshu.task.create', this.createTask.bind(this));
+    this.methods.set('xiaohongshu.task.list', this.listTasks.bind(this));
+    this.methods.set('xiaohongshu.task.cancel', this.cancelTask.bind(this));
+    this.methods.set('xiaohongshu.task.status', this.getTaskStatus.bind(this));
+
+    // 系统管理相关方法
+    this.methods.set('xiaohongshu.system.status', this.getSystemStatus.bind(this));
+    this.methods.set('xiaohongshu.system.config', this.getSystemConfig.bind(this));
+    this.methods.set('xiaohongshu.system.stats', this.getSystemStats.bind(this));
   }
 
   /**
-   * 注册MCP方法
+   * 初始化MCP管理器
    */
-  registerMethod(name, handler) {
-    this.methods.set(name, handler);
-    logger.debug(`注册MCP方法: ${name}`);
+  async initialize() {
+    try {
+      this.logger.info('🔧 初始化MCP管理器...');
+      
+      // 清理过期会话
+      this.startSessionCleanup();
+      
+      this.logger.info('✅ MCP管理器初始化完成');
+    } catch (error) {
+      this.logger.error('❌ MCP管理器初始化失败', { error: error.message });
+      throw error;
+    }
   }
 
   /**
-   * 注册通知处理器
-   */
-  registerNotification(name, handler) {
-    this.notifications.set(name, handler);
-    logger.debug(`注册MCP通知: ${name}`);
-  }
-
-  /**
-   * 处理JSON-RPC请求
+   * 处理MCP请求
    */
   async handleRequest(request) {
     try {
-      // 验证JSON-RPC格式
-      const validation = this.validateRequest(request);
-      if (!validation.valid) {
-        return this.createErrorResponse(request.id, -32600, validation.error);
+      // 验证请求格式
+      if (!this.validateRequest(request)) {
+        return this.createErrorResponse(-32600, 'Invalid Request');
       }
 
       const { id, method, params } = request;
 
       // 检查方法是否存在
       if (!this.methods.has(method)) {
-        return this.createErrorResponse(id, -32601, `Method not found: ${method}`);
+        return this.createErrorResponse(-32601, 'Method not found', id);
       }
-
-      logger.info(`处理MCP请求: ${method} (${id || 'notification'})`);
 
       // 执行方法
-      const handler = this.methods.get(method);
-      const result = await handler(params || {});
+      const methodFunc = this.methods.get(method);
+      const result = await methodFunc(params);
 
-      // 如果是通知，不返回响应
-      if (id === null || id === undefined) {
-        return null;
-      }
+      return this.createSuccessResponse(result, id);
 
-      return this.createSuccessResponse(id, result);
     } catch (error) {
-      logger.error(`MCP请求处理失败: ${request.method}`, error);
-      return this.createErrorResponse(request.id, -32603, error.message);
+      this.logger.error('MCP请求处理失败', { error: error.message, request });
+      return this.createErrorResponse(-32603, 'Internal error', request.id);
     }
   }
 
   /**
-   * 验证JSON-RPC请求格式
+   * 验证请求格式
    */
   validateRequest(request) {
-    if (!request || typeof request !== 'object') {
-      return { valid: false, error: 'Invalid request format' };
-    }
-
-    if (request.jsonrpc !== '2.0') {
-      return { valid: false, error: 'Invalid JSON-RPC version' };
-    }
-
-    if (typeof request.method !== 'string') {
-      return { valid: false, error: 'Method must be a string' };
-    }
-
-    if (request.params && typeof request.params !== 'object' && !Array.isArray(request.params)) {
-      return { valid: false, error: 'Params must be an object or array' };
-    }
-
-    return { valid: true };
+    return (
+      typeof request === 'object' &&
+      request !== null &&
+      typeof request.jsonrpc === 'string' &&
+      request.jsonrpc === '2.0' &&
+      typeof request.method === 'string' &&
+      (request.params === undefined || typeof request.params === 'object')
+    );
   }
 
   /**
    * 创建成功响应
    */
-  createSuccessResponse(id, result) {
+  createSuccessResponse(result, id) {
     return {
       jsonrpc: '2.0',
-      id,
-      result
+      result,
+      id
     };
   }
 
   /**
    * 创建错误响应
    */
-  createErrorResponse(id, code, message, data = null) {
-    const response = {
+  createErrorResponse(code, message, id = null) {
+    return {
       jsonrpc: '2.0',
-      id,
-      error: {
-        code,
-        message
-      }
+      error: { code, message },
+      id
     };
-
-    if (data !== null) {
-      response.error.data = data;
-    }
-
-    return response;
   }
 
-  // 账号管理方法实现
+  // ===== 账号管理方法 =====
+
+  /**
+   * 获取账号列表
+   */
+  async listAccounts(params = {}) {
+    const { page = 1, limit = 20, status, search } = params;
+    
+    try {
+      const offset = (page - 1) * limit;
+      let whereClause = '1=1';
+      const values = [];
+
+      if (status) {
+        whereClause += ' AND status = ?';
+        values.push(status);
+      }
+
+      if (search) {
+        whereClause += ' AND (username LIKE ? OR nickname LIKE ?)';
+        values.push(`%${search}%`, `%${search}%`);
+      }
+
+      const [accounts] = await this.dbManager.query(
+        `SELECT a.*, p.host as proxy_host, p.port as proxy_port, f.fingerprint_id 
+         FROM idea_xiaohongshu_accounts a 
+         LEFT JOIN idea_xiaohongshu_proxies p ON a.proxy_id = p.id 
+         LEFT JOIN idea_xiaohongshu_fingerprints f ON a.fingerprint_id = f.id 
+         WHERE ${whereClause} 
+         ORDER BY a.created_at DESC 
+         LIMIT ? OFFSET ?`,
+        [...values, limit, offset]
+      );
+
+      const [totalResult] = await this.dbManager.query(
+        `SELECT COUNT(*) as total FROM idea_xiaohongshu_accounts a WHERE ${whereClause}`,
+        values
+      );
+
+      return {
+        accounts,
+        pagination: {
+          page,
+          limit,
+          total: totalResult[0].total,
+          pages: Math.ceil(totalResult[0].total / limit)
+        }
+      };
+
+    } catch (error) {
+      this.logger.error('获取账号列表失败', { error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * 创建账号
+   */
   async createAccount(params) {
-    const { username, password, email, phone, proxyId, fingerprintId } = params;
+    const { username, phone, email, nickname, proxyId, fingerprintId } = params;
+    
+    try {
+      const [result] = await this.dbManager.query(
+        `INSERT INTO idea_xiaohongshu_accounts (username, phone, email, nickname, proxy_id, fingerprint_id) 
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [username, phone, email, nickname, proxyId, fingerprintId]
+      );
 
-    if (!username) {
-      throw new Error('Username is required');
-    }
+      return {
+        accountId: result.insertId,
+        message: '账号创建成功'
+      };
 
-    const account = await this.db.Account.create({
-      username,
-      password, // 应该加密存储
-      email,
-      phone,
-      proxy_id: proxyId,
-      fingerprint_id: fingerprintId,
-      status: 'active'
-    });
-
-    return {
-      id: account.id,
-      username: account.username,
-      status: account.status,
-      created_at: account.created_at
-    };
-  }
-
-  async listAccounts(params) {
-    const { page = 1, limit = 20, status } = params;
-    const offset = (page - 1) * limit;
-
-    const where = {};
-    if (status) where.status = status;
-
-    const { count, rows } = await this.db.Account.findAndCountAll({
-      where,
-      limit,
-      offset,
-      order: [['created_at', 'DESC']],
-      include: [
-        { model: this.db.Proxy, attributes: ['host', 'port', 'country'] },
-        { model: this.db.Fingerprint, attributes: ['fingerprint_id'] }
-      ]
-    });
-
-    return {
-      accounts: rows.map(account => ({
-        id: account.id,
-        username: account.username,
-        nickname: account.nickname,
-        email: account.email,
-        phone: account.phone,
-        status: account.status,
-        login_status: account.login_status,
-        last_login_time: account.last_login_time,
-        proxy: account.Proxy,
-        fingerprint: account.Fingerprint,
-        created_at: account.created_at
-      })),
-      pagination: {
-        total: count,
-        page,
-        limit,
-        pages: Math.ceil(count / limit)
+    } catch (error) {
+      if (error.code === 'ER_DUP_ENTRY') {
+        throw new Error('用户名已存在');
       }
-    };
-  }
-
-  async getAccount(params) {
-    const { id } = params;
-    const account = await this.db.Account.findByPk(id, {
-      include: [
-        { model: this.db.Proxy },
-        { model: this.db.Fingerprint }
-      ]
-    });
-
-    if (!account) {
-      throw new Error('Account not found');
+      this.logger.error('创建账号失败', { error: error.message });
+      throw error;
     }
-
-    return {
-      id: account.id,
-      username: account.username,
-      nickname: account.nickname,
-      email: account.email,
-      phone: account.phone,
-      status: account.status,
-      login_status: account.login_status,
-      last_login_time: account.last_login_time,
-      proxy: account.Proxy,
-      fingerprint: account.Fingerprint,
-      created_at: account.created_at,
-      updated_at: account.updated_at
-    };
   }
 
+  /**
+   * 更新账号
+   */
   async updateAccount(params) {
     const { id, ...updateData } = params;
     
-    const account = await this.db.Account.findByPk(id);
-    if (!account) {
-      throw new Error('Account not found');
+    try {
+      const fields = Object.keys(updateData);
+      const values = Object.values(updateData);
+      
+      if (fields.length === 0) {
+        throw new Error('没有要更新的字段');
+      }
+
+      const setClause = fields.map(field => `${field} = ?`).join(', ');
+      
+      await this.dbManager.query(
+        `UPDATE idea_xiaohongshu_accounts SET ${setClause}, updated_at = NOW() WHERE id = ?`,
+        [...values, id]
+      );
+
+      return { message: '账号更新成功' };
+
+    } catch (error) {
+      this.logger.error('更新账号失败', { error: error.message });
+      throw error;
     }
-
-    await account.update(updateData);
-
-    return {
-      id: account.id,
-      username: account.username,
-      status: account.status,
-      updated_at: account.updated_at
-    };
   }
 
+  /**
+   * 删除账号
+   */
   async deleteAccount(params) {
     const { id } = params;
     
-    const account = await this.db.Account.findByPk(id);
-    if (!account) {
-      throw new Error('Account not found');
+    try {
+      await this.dbManager.query(
+        'DELETE FROM idea_xiaohongshu_accounts WHERE id = ?',
+        [id]
+      );
+
+      return { message: '账号删除成功' };
+
+    } catch (error) {
+      this.logger.error('删除账号失败', { error: error.message });
+      throw error;
     }
-
-    await account.destroy();
-
-    return { success: true };
   }
 
+  /**
+   * 账号登录
+   */
   async loginAccount(params) {
-    const { id, username, password } = params;
+    const { id, method = 'manual', credentials } = params;
+    
+    try {
+      // 获取账号信息
+      const [accounts] = await this.dbManager.query(
+        'SELECT * FROM idea_xiaohongshu_accounts WHERE id = ?',
+        [id]
+      );
 
-    const account = await this.db.Account.findByPk(id);
-    if (!account) {
-      throw new Error('Account not found');
+      if (accounts.length === 0) {
+        throw new Error('账号不存在');
+      }
+
+      const account = accounts[0];
+      
+      // 创建登录任务
+      const taskId = await this.taskExecutor.createTask({
+        type: 'account_login',
+        accountId: id,
+        method,
+        credentials,
+        priority: 1
+      });
+
+      return {
+        taskId,
+        message: '登录任务已创建'
+      };
+
+    } catch (error) {
+      this.logger.error('账号登录失败', { error: error.message });
+      throw error;
     }
-
-    // 创建登录任务
-    const task = await this.taskManager.createTask({
-      type: 'login',
-      accountId: id,
-      data: { username: username || account.username, password }
-    });
-
-    return {
-      task_id: task.id,
-      status: 'pending'
-    };
   }
 
+  /**
+   * 账号登出
+   */
   async logoutAccount(params) {
     const { id } = params;
+    
+    try {
+      await this.dbManager.query(
+        'UPDATE idea_xiaohongshu_accounts SET login_status = FALSE, cookies_encrypted = NULL WHERE id = ?',
+        [id]
+      );
 
-    const account = await this.db.Account.findByPk(id);
-    if (!account) {
-      throw new Error('Account not found');
+      return { message: '账号已登出' };
+
+    } catch (error) {
+      this.logger.error('账号登出失败', { error: error.message });
+      throw error;
     }
-
-    // 清除登录状态
-    await account.update({
-      login_status: false,
-      cookies_encrypted: null
-    });
-
-    return { success: true };
   }
 
-  // 任务管理方法实现
-  async createTask(params) {
-    const { type, accountId, data, cronExpression, priority = 1, scheduledTime } = params;
-
-    if (!type || !accountId) {
-      throw new Error('Type and accountId are required');
-    }
-
-    const task = await this.taskManager.createTask({
-      type,
-      accountId,
-      data,
-      cronExpression,
-      priority,
-      scheduledTime
-    });
-
-    return {
-      task_id: task.id,
-      status: task.status,
-      scheduled_time: task.scheduled_time
-    };
-  }
-
-  async listTasks(params) {
-    return this.taskManager.getTaskList(params);
-  }
-
-  async getTask(params) {
-    const { id } = params;
-    return this.taskManager.getTaskDetails(id);
-  }
-
-  async cancelTask(params) {
-    const { id } = params;
-    await this.taskManager.cancelTask(id);
-    return { success: true };
-  }
-
-  async deleteTask(params) {
+  /**
+   * 获取账号状态
+   */
+  async getAccountStatus(params) {
     const { id } = params;
     
-    const task = await this.db.Task.findByPk(id);
-    if (!task) {
-      throw new Error('Task not found');
-    }
+    try {
+      const [accounts] = await this.dbManager.query(
+        'SELECT id, username, status, login_status, last_login_time FROM idea_xiaohongshu_accounts WHERE id = ?',
+        [id]
+      );
 
-    await task.destroy();
-    return { success: true };
-  }
-
-  // 内容发布方法实现
-  async createPost(params) {
-    const { accountId, title, content, images, tags, topic, scheduledTime } = params;
-
-    if (!accountId || !title) {
-      throw new Error('AccountId and title are required');
-    }
-
-    const task = await this.taskManager.createTask({
-      type: 'create_post',
-      accountId,
-      data: { title, content, images, tags, topic },
-      scheduledTime
-    });
-
-    return {
-      task_id: task.id,
-      status: task.status,
-      scheduled_time: task.scheduled_time
-    };
-  }
-
-  async updatePost(params) {
-    const { id, ...updateData } = params;
-    
-    const post = await this.db.Post.findByPk(id);
-    if (!post) {
-      throw new Error('Post not found');
-    }
-
-    await post.update(updateData);
-
-    return {
-      id: post.id,
-      title: post.title,
-      status: post.status,
-      updated_at: post.updated_at
-    };
-  }
-
-  async deletePost(params) {
-    const { id } = params;
-    
-    const post = await this.db.Post.findByPk(id);
-    if (!post) {
-      throw new Error('Post not found');
-    }
-
-    await post.update({ status: 'deleted' });
-    return { success: true };
-  }
-
-  async listPosts(params) {
-    const { page = 1, limit = 20, accountId, status } = params;
-    const offset = (page - 1) * limit;
-
-    const where = {};
-    if (accountId) where.account_id = accountId;
-    if (status) where.status = status;
-
-    const { count, rows } = await this.db.Post.findAndCountAll({
-      where,
-      limit,
-      offset,
-      order: [['created_at', 'DESC']],
-      include: [
-        { model: this.db.Account, attributes: ['username', 'nickname'] }
-      ]
-    });
-
-    return {
-      posts: rows,
-      pagination: {
-        total: count,
-        page,
-        limit,
-        pages: Math.ceil(count / limit)
+      if (accounts.length === 0) {
+        throw new Error('账号不存在');
       }
-    };
+
+      return accounts[0];
+
+    } catch (error) {
+      this.logger.error('获取账号状态失败', { error: error.message });
+      throw error;
+    }
   }
 
-  async getPost(params) {
-    const { id } = params;
+  // ===== 内容发布方法 =====
+
+  /**
+   * 创建笔记
+   */
+  async createPost(params) {
+    const { accountId, title, content, type = 'image', images = [], video = null, tags = [], topic = null, scheduledTime = null } = params;
     
-    const post = await this.db.Post.findByPk(id, {
-      include: [
-        { model: this.db.Account, attributes: ['username', 'nickname'] }
-      ]
-    });
+    try {
+      const [result] = await this.dbManager.query(
+        `INSERT INTO idea_xiaohongshu_posts (account_id, title, content, type, images_data, video_data, tags, topic, scheduled_time) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [accountId, title, content, type, JSON.stringify(images), JSON.stringify(video), JSON.stringify(tags), topic, scheduledTime]
+      );
 
-    if (!post) {
-      throw new Error('Post not found');
+      return {
+        postId: result.insertId,
+        message: '笔记创建成功'
+      };
+
+    } catch (error) {
+      this.logger.error('创建笔记失败', { error: error.message });
+      throw error;
     }
-
-    return post;
   }
 
-  // 互动方法实现
-  async createComment(params) {
-    const { accountId, postId, content, parentCommentId } = params;
-
-    if (!accountId || !postId || !content) {
-      throw new Error('AccountId, postId and content are required');
-    }
-
-    const task = await this.taskManager.createTask({
-      type: 'create_comment',
-      accountId,
-      data: { postId, content, parentCommentId }
-    });
-
-    return {
-      task_id: task.id,
-      status: task.status
-    };
-  }
-
-  async deleteComment(params) {
-    const { id } = params;
+  /**
+   * 发布笔记
+   */
+  async publishPost(params) {
+    const { postId, immediate = true } = params;
     
-    const comment = await this.db.Comment.findByPk(id);
-    if (!comment) {
-      throw new Error('Comment not found');
-    }
+    try {
+      // 获取笔记信息
+      const [posts] = await this.dbManager.query(
+        'SELECT * FROM idea_xiaohongshu_posts WHERE id = ?',
+        [postId]
+      );
 
-    await comment.destroy();
-    return { success: true };
+      if (posts.length === 0) {
+        throw new Error('笔记不存在');
+      }
+
+      const post = posts[0];
+      
+      // 创建发布任务
+      const taskId = await this.taskExecutor.createTask({
+        type: 'post_publish',
+        accountId: post.account_id,
+        postId,
+        immediate,
+        priority: 2
+      });
+
+      return {
+        taskId,
+        message: '发布任务已创建'
+      };
+
+    } catch (error) {
+      this.logger.error('发布笔记失败', { error: error.message });
+      throw error;
+    }
   }
 
-  async addLike(params) {
-    const { accountId, postId } = params;
+  /**
+   * 获取笔记列表
+   */
+  async listPosts(params) {
+    const { accountId, page = 1, limit = 20, status, type } = params;
+    
+    try {
+      const offset = (page - 1) * limit;
+      let whereClause = '1=1';
+      const values = [];
 
-    if (!accountId || !postId) {
-      throw new Error('AccountId and postId are required');
+      if (accountId) {
+        whereClause += ' AND account_id = ?';
+        values.push(accountId);
+      }
+
+      if (status) {
+        whereClause += ' AND status = ?';
+        values.push(status);
+      }
+
+      if (type) {
+        whereClause += ' AND type = ?';
+        values.push(type);
+      }
+
+      const [posts] = await this.dbManager.query(
+        `SELECT p.*, a.username 
+         FROM idea_xiaohongshu_posts p 
+         JOIN idea_xiaohongshu_accounts a ON p.account_id = a.id 
+         WHERE ${whereClause} 
+         ORDER BY p.created_at DESC 
+         LIMIT ? OFFSET ?`,
+        [...values, limit, offset]
+      );
+
+      const [totalResult] = await this.dbManager.query(
+        `SELECT COUNT(*) as total FROM idea_xiaohongshu_posts p WHERE ${whereClause}`,
+        values
+      );
+
+      return {
+        posts,
+        pagination: {
+          page,
+          limit,
+          total: totalResult[0].total,
+          pages: Math.ceil(totalResult[0].total / limit)
+        }
+      };
+
+    } catch (error) {
+      this.logger.error('获取笔记列表失败', { error: error.message });
+      throw error;
     }
-
-    const task = await this.taskManager.createTask({
-      type: 'like_post',
-      accountId,
-      data: { postId, action: 'like' }
-    });
-
-    return {
-      task_id: task.id,
-      status: task.status
-    };
   }
 
-  async removeLike(params) {
-    const { accountId, postId } = params;
+  /**
+   * 删除笔记
+   */
+  async deletePost(params) {
+    const { postId } = params;
+    
+    try {
+      await this.dbManager.query(
+        'UPDATE idea_xiaohongshu_posts SET status = "deleted" WHERE id = ?',
+        [postId]
+      );
 
-    if (!accountId || !postId) {
-      throw new Error('AccountId and postId are required');
+      return { message: '笔记已删除' };
+
+    } catch (error) {
+      this.logger.error('删除笔记失败', { error: error.message });
+      throw error;
     }
-
-    const task = await this.taskManager.createTask({
-      type: 'like_post',
-      accountId,
-      data: { postId, action: 'unlike' }
-    });
-
-    return {
-      task_id: task.id,
-      status: task.status
-    };
   }
 
-  async addFollow(params) {
-    const { accountId, userId } = params;
+  /**
+   * 更新笔记
+   */
+  async updatePost(params) {
+    const { postId, ...updateData } = params;
+    
+    try {
+      const fields = Object.keys(updateData);
+      const values = Object.values(updateData);
+      
+      if (fields.length === 0) {
+        throw new Error('没有要更新的字段');
+      }
 
-    if (!accountId || !userId) {
-      throw new Error('AccountId and userId are required');
+      const setClause = fields.map(field => `${field} = ?`).join(', ');
+      
+      await this.dbManager.query(
+        `UPDATE idea_xiaohongshu_posts SET ${setClause}, updated_at = NOW() WHERE id = ?`,
+        [...values, postId]
+      );
+
+      return { message: '笔记更新成功' };
+
+    } catch (error) {
+      this.logger.error('更新笔记失败', { error: error.message });
+      throw error;
     }
-
-    const task = await this.taskManager.createTask({
-      type: 'follow_user',
-      accountId,
-      data: { userId, action: 'follow' }
-    });
-
-    return {
-      task_id: task.id,
-      status: task.status
-    };
   }
 
-  async removeFollow(params) {
-    const { accountId, userId } = params;
+  // ===== 数据采集方法 =====
 
-    if (!accountId || !userId) {
-      throw new Error('AccountId and userId are required');
+  /**
+   * 搜索内容
+   */
+  async searchContent(params) {
+    const { keyword, type = 'all', limit = 20, sort = 'relevant', accountId } = params;
+    
+    try {
+      // 创建搜索任务
+      const taskId = await this.taskExecutor.createTask({
+        type: 'content_search',
+        accountId,
+        keyword,
+        searchType: type,
+        limit,
+        sort,
+        priority: 3
+      });
+
+      return {
+        taskId,
+        message: '搜索任务已创建'
+      };
+
+    } catch (error) {
+      this.logger.error('搜索内容失败', { error: error.message });
+      throw error;
     }
-
-    const task = await this.taskManager.createTask({
-      type: 'follow_user',
-      accountId,
-      data: { userId, action: 'unfollow' }
-    });
-
-    return {
-      task_id: task.id,
-      status: task.status
-    };
   }
 
-  // 数据采集方法实现
-  async scrapeUser(params) {
-    const { accountId, userId } = params;
+  /**
+   * 获取用户信息
+   */
+  async getUserInfo(params) {
+    const { userId, accountId } = params;
+    
+    try {
+      // 创建获取用户信息任务
+      const taskId = await this.taskExecutor.createTask({
+        type: 'user_info',
+        accountId,
+        userId,
+        priority: 3
+      });
 
-    if (!accountId || !userId) {
-      throw new Error('AccountId and userId are required');
+      return {
+        taskId,
+        message: '获取用户信息任务已创建'
+      };
+
+    } catch (error) {
+      this.logger.error('获取用户信息失败', { error: error.message });
+      throw error;
     }
-
-    const task = await this.taskManager.createTask({
-      type: 'scrape_data',
-      accountId,
-      data: { type: 'user_info', targetId: userId }
-    });
-
-    return {
-      task_id: task.id,
-      status: task.status
-    };
   }
 
-  async scrapePost(params) {
-    const { accountId, postId } = params;
+  /**
+   * 获取笔记详情
+   */
+  async getPostInfo(params) {
+    const { postId, accountId } = params;
+    
+    try {
+      // 创建获取笔记详情任务
+      const taskId = await this.taskExecutor.createTask({
+        type: 'post_info',
+        accountId,
+        postId,
+        priority: 3
+      });
 
-    if (!accountId || !postId) {
-      throw new Error('AccountId and postId are required');
+      return {
+        taskId,
+        message: '获取笔记详情任务已创建'
+      };
+
+    } catch (error) {
+      this.logger.error('获取笔记详情失败', { error: error.message });
+      throw error;
     }
-
-    const task = await this.taskManager.createTask({
-      type: 'scrape_data',
-      accountId,
-      data: { type: 'post_details', targetId: postId }
-    });
-
-    return {
-      task_id: task.id,
-      status: task.status
-    };
   }
 
-  async scrapeComments(params) {
-    const { accountId, postId, limit = 50 } = params;
+  /**
+   * 获取评论
+   */
+  async getComments(params) {
+    const { postId, accountId, limit = 50, offset = 0 } = params;
+    
+    try {
+      // 创建获取评论任务
+      const taskId = await this.taskExecutor.createTask({
+        type: 'comments_fetch',
+        accountId,
+        postId,
+        limit,
+        offset,
+        priority: 3
+      });
 
-    if (!accountId || !postId) {
-      throw new Error('AccountId and postId are required');
+      return {
+        taskId,
+        message: '获取评论任务已创建'
+      };
+
+    } catch (error) {
+      this.logger.error('获取评论失败', { error: error.message });
+      throw error;
     }
-
-    const task = await this.taskManager.createTask({
-      type: 'scrape_data',
-      accountId,
-      data: { type: 'post_comments', targetId: postId, limit }
-    });
-
-    return {
-      task_id: task.id,
-      status: task.status
-    };
   }
 
-  async searchPosts(params) {
-    const { accountId, keyword, limit = 50 } = params;
-
-    if (!accountId || !keyword) {
-      throw new Error('AccountId and keyword are required');
-    }
-
-    const task = await this.taskManager.createTask({
-      type: 'scrape_data',
-      accountId,
-      data: { type: 'search_posts', keyword, limit }
-    });
-
-    return {
-      task_id: task.id,
-      status: task.status
-    };
-  }
-
+  /**
+   * 获取热门内容
+   */
   async getTrending(params) {
-    const { accountId, category, limit = 50 } = params;
-
-    if (!accountId) {
-      throw new Error('AccountId is required');
-    }
-
-    const task = await this.taskManager.createTask({
-      type: 'scrape_data',
-      accountId,
-      data: { type: 'trending_posts', category, limit }
-    });
-
-    return {
-      task_id: task.id,
-      status: task.status
-    };
-  }
-
-  // 系统状态方法
-  async getSystemStatus() {
-    const taskStats = await this.taskManager.getTaskStats();
+    const { category = 'all', limit = 20, accountId } = params;
     
-    return {
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      memory: process.memoryUsage(),
-      tasks: taskStats,
-      version: require('../../package.json').version
-    };
+    try {
+      // 创建获取热门内容任务
+      const taskId = await this.taskExecutor.createTask({
+        type: 'trending_fetch',
+        accountId,
+        category,
+        limit,
+        priority: 3
+      });
+
+      return {
+        taskId,
+        message: '获取热门内容任务已创建'
+      };
+
+    } catch (error) {
+      this.logger.error('获取热门内容失败', { error: error.message });
+      throw error;
+    }
   }
 
-  async getSystemStats() {
-    const taskStats = await this.taskManager.getTaskStats();
-    const accountCount = await this.db.Account.count();
-    const postCount = await this.db.Post.count();
-    const commentCount = await this.db.Comment.count();
+  // ===== 任务管理方法 =====
 
-    return {
-      accounts: {
-        total: accountCount,
-        active: await this.db.Account.count({ where: { status: 'active' } }),
-        banned: await this.db.Account.count({ where: { status: 'banned' } })
-      },
-      posts: {
-        total: postCount,
-        published: await this.db.Post.count({ where: { status: 'published' } }),
-        draft: await this.db.Post.count({ where: { status: 'draft' } })
-      },
-      comments: {
-        total: commentCount
-      },
-      tasks: taskStats,
-      system: {
+  /**
+   * 创建任务
+   */
+  async createTask(params) {
+    const { type, accountId, taskData, cronExpression, priority = 1 } = params;
+    
+    try {
+      const [result] = await this.dbManager.query(
+        `INSERT INTO idea_xiaohongshu_tasks (task_type, account_id, task_data, cron_expression, priority) 
+         VALUES (?, ?, ?, ?, ?)`,
+        [type, accountId, JSON.stringify(taskData), cronExpression, priority]
+      );
+
+      return {
+        taskId: result.insertId,
+        message: '任务创建成功'
+      };
+
+    } catch (error) {
+      this.logger.error('创建任务失败', { error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * 获取任务列表
+   */
+  async listTasks(params) {
+    const { accountId, type, status, page = 1, limit = 20 } = params;
+    
+    try {
+      const offset = (page - 1) * limit;
+      let whereClause = '1=1';
+      const values = [];
+
+      if (accountId) {
+        whereClause += ' AND account_id = ?';
+        values.push(accountId);
+      }
+
+      if (type) {
+        whereClause += ' AND task_type = ?';
+        values.push(type);
+      }
+
+      if (status) {
+        whereClause += ' AND status = ?';
+        values.push(status);
+      }
+
+      const [tasks] = await this.dbManager.query(
+        `SELECT t.*, a.username 
+         FROM idea_xiaohongshu_tasks t 
+         JOIN idea_xiaohongshu_accounts a ON t.account_id = a.id 
+         WHERE ${whereClause} 
+         ORDER BY t.created_at DESC 
+         LIMIT ? OFFSET ?`,
+        [...values, limit, offset]
+      );
+
+      const [totalResult] = await this.dbManager.query(
+        `SELECT COUNT(*) as total FROM idea_xiaohongshu_tasks t WHERE ${whereClause}`,
+        values
+      );
+
+      return {
+        tasks,
+        pagination: {
+          page,
+          limit,
+          total: totalResult[0].total,
+          pages: Math.ceil(totalResult[0].total / limit)
+        }
+      };
+
+    } catch (error) {
+      this.logger.error('获取任务列表失败', { error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * 取消任务
+   */
+  async cancelTask(params) {
+    const { taskId } = params;
+    
+    try {
+      await this.dbManager.query(
+        'UPDATE idea_xiaohongshu_tasks SET status = "cancelled" WHERE id = ?',
+        [taskId]
+      );
+
+      return { message: '任务已取消' };
+
+    } catch (error) {
+      this.logger.error('取消任务失败', { error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * 获取任务状态
+   */
+  async getTaskStatus(params) {
+    const { taskId } = params;
+    
+    try {
+      const [tasks] = await this.dbManager.query(
+        'SELECT id, task_type, status, started_time, completed_time, error_message, result_data FROM idea_xiaohongshu_tasks WHERE id = ?',
+        [taskId]
+      );
+
+      if (tasks.length === 0) {
+        throw new Error('任务不存在');
+      }
+
+      const task = tasks[0];
+      task.result_data = task.result_data ? JSON.parse(task.result_data) : null;
+
+      return task;
+
+    } catch (error) {
+      this.logger.error('获取任务状态失败', { error: error.message });
+      throw error;
+    }
+  }
+
+  // ===== 系统管理方法 =====
+
+  /**
+   * 获取系统状态
+   */
+  async getSystemStatus() {
+    try {
+      const [accountStats] = await this.dbManager.query(
+        'SELECT status, COUNT(*) as count FROM idea_xiaohongshu_accounts GROUP BY status'
+      );
+
+      const [taskStats] = await this.dbManager.query(
+        'SELECT status, COUNT(*) as count FROM idea_xiaohongshu_tasks GROUP BY status'
+      );
+
+      const [postStats] = await this.dbManager.query(
+        'SELECT status, COUNT(*) as count FROM idea_xiaohongshu_posts GROUP BY status'
+      );
+
+      return {
+        accounts: accountStats,
+        tasks: taskStats,
+        posts: postStats,
         uptime: process.uptime(),
         memory: process.memoryUsage(),
-        version: require('../../package.json').version
-      }
-    };
+        timestamp: new Date().toISOString()
+      };
+
+    } catch (error) {
+      this.logger.error('获取系统状态失败', { error: error.message });
+      throw error;
+    }
   }
 
+  /**
+   * 获取系统配置
+   */
   async getSystemConfig() {
-    const config = require('../config/config-manager');
-    
     return {
-      server: {
-        port: config.get('server.port'),
-        host: config.get('server.host')
-      },
-      database: {
-        host: config.get('database.host'),
-        port: config.get('database.port'),
-        database: config.get('database.database')
-      },
-      browser: {
-        headless: config.get('browser.headless'),
-        timeout: config.get('browser.timeout')
-      },
+      version: require('../../package.json').version,
       features: {
-        anti_detection: config.get('features.anti_detection'),
-        proxy_rotation: config.get('features.proxy_rotation'),
-        fingerprint_randomization: config.get('features.fingerprint_randomization')
+        accountManagement: true,
+        contentPublishing: true,
+        dataCollection: true,
+        taskScheduling: true,
+        monitoring: true
+      },
+      limits: {
+        maxAccounts: 1000,
+        maxTasks: 10000,
+        maxPosts: 50000
       }
     };
   }
 
   /**
-   * 获取可用方法列表
+   * 获取系统统计
    */
-  getMethods() {
-    return Array.from(this.methods.keys()).map(method => ({
-      name: method,
-      description: this.getMethodDescription(method)
-    }));
+  async getSystemStats() {
+    try {
+      const [totalAccounts] = await this.dbManager.query('SELECT COUNT(*) as total FROM idea_xiaohongshu_accounts');
+      const [activeAccounts] = await this.dbManager.query('SELECT COUNT(*) as total FROM idea_xiaohongshu_accounts WHERE status = "active"');
+      const [totalPosts] = await this.dbManager.query('SELECT COUNT(*) as total FROM idea_xiaohongshu_posts');
+      const [publishedPosts] = await this.dbManager.query('SELECT COUNT(*) as total FROM idea_xiaohongshu_posts WHERE status = "published"');
+      const [totalTasks] = await this.dbManager.query('SELECT COUNT(*) as total FROM idea_xiaohongshu_tasks');
+      const [completedTasks] = await this.dbManager.query('SELECT COUNT(*) as total FROM idea_xiaohongshu_tasks WHERE status = "completed"');
+
+      return {
+        accounts: {
+          total: totalAccounts[0].total,
+          active: activeAccounts[0].total
+        },
+        posts: {
+          total: totalPosts[0].total,
+          published: publishedPosts[0].total
+        },
+        tasks: {
+          total: totalTasks[0].total,
+          completed: completedTasks[0].total
+        },
+        timestamp: new Date().toISOString()
+      };
+
+    } catch (error) {
+      this.logger.error('获取系统统计失败', { error: error.message });
+      throw error;
+    }
   }
 
   /**
-   * 获取方法描述
+   * 启动会话清理
    */
-  getMethodDescription(method) {
-    const descriptions = {
-      'accounts.create': '创建新的小红书账号',
-      'accounts.list': '获取账号列表',
-      'accounts.get': '获取单个账号详情',
-      'accounts.update': '更新账号信息',
-      'accounts.delete': '删除账号',
-      'accounts.login': '登录账号',
-      'accounts.logout': '登出账号',
-      'tasks.create': '创建新任务',
-      'tasks.list': '获取任务列表',
-      'tasks.get': '获取任务详情',
-      'tasks.cancel': '取消任务',
-      'tasks.delete': '删除任务',
-      'posts.create': '创建新笔记',
-      'posts.update': '更新笔记',
-      'posts.delete': '删除笔记',
-      'posts.list': '获取笔记列表',
-      'posts.get': '获取笔记详情',
-      'comments.create': '创建评论',
-      'comments.delete': '删除评论',
-      'likes.add': '添加点赞',
-      'likes.remove': '移除点赞',
-      'follows.add': '添加关注',
-      'follows.remove': '移除关注',
-      'data.scrape_user': '采集用户信息',
-      'data.scrape_post': '采集笔记信息',
-      'data.scrape_comments': '采集评论信息',
-      'data.search_posts': '搜索笔记',
-      'data.get_trending': '获取热门笔记',
-      'system.status': '获取系统状态',
-      'system.stats': '获取系统统计',
-      'system.config': '获取系统配置'
-    };
+  startSessionCleanup() {
+    setInterval(() => {
+      const now = Date.now();
+      for (const [sessionId, session] of this.sessions) {
+        if (now - session.lastActivity > 30 * 60 * 1000) { // 30分钟无活动
+          this.sessions.delete(sessionId);
+        }
+      }
+    }, 5 * 60 * 1000); // 每5分钟检查一次
+  }
 
-    return descriptions[method] || '暂无描述';
+  /**
+   * 停止MCP管理器
+   */
+  async stop() {
+    this.logger.info('🔧 停止MCP管理器...');
+    this.sessions.clear();
+    this.subscriptions.clear();
+    this.logger.info('✅ MCP管理器已停止');
+  }
+
+  /**
+   * 健康检查
+   */
+  async healthCheck() {
+    try {
+      await this.dbManager.query('SELECT 1');
+      return {
+        status: 'healthy',
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      return {
+        status: 'unhealthy',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
   }
 }
 
