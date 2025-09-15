@@ -1,0 +1,60 @@
+# 依赖目录
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 运行时文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 日志文件
+logs/
+*.log
+
+# 数据库文件
+*.sqlite
+*.db
+
+# 浏览器数据
+browser-data/
+user-data/
+cookies/
+
+# 上传文件
+uploads/
+downloads/
+temp/
+
+# 缓存目录
+.cache/
+.cache-loader/
+
+# IDE配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 测试覆盖率
+coverage/
+.nyc_output/
+
+# 构建输出
+dist/
+build/
+
+# 备份文件
+*.bak
+*.backup
+
+# 敏感数据
+data/private/
+data/sensitive/
