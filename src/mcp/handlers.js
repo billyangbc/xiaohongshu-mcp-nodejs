@@ -1,352 +1,505 @@
 /**
- * MCP协议处理器实现
- * 小红书各项功能的具体实现
+ * MCP协议处理器
+ * 实现小红书MCP协议的各种功能
  */
 
-import { MCP_ERROR_CODES, MCPParamsSchema } from './protocol.js';
-import { pool } from '../database/index.js';
-import { AccountManager } from '../services/account.js';
-import { PostManager } from '../services/post.js';
-import { CommentManager } from '../services/comment.js';
-import { UserManager } from '../services/user.js';
-import { DiscoveryService } from '../services/discovery.js';
-import { SystemService } from '../services/system.js';
-
-// 初始化服务
-const accountManager = new AccountManager();
-const postManager = new PostManager();
-const commentManager = new CommentManager();
-const userManager = new UserManager();
-const discoveryService = new DiscoveryService();
-const systemService = new SystemService();
+import { MCPProtocol, MCP_ERROR_CODES } from './protocol.js';
+import { logger } from '../utils/logger.js';
+import { AccountManager } from '../services/account-manager.js';
+import { PostManager } from '../services/post-manager.js';
+import { SearchManager } from '../services/search-manager.js';
+import { RecommendationManager } from '../services/recommendation-manager.js';
 
 /**
- * MCP协议处理器映射
+ * MCP处理器类
  */
-export const mcpHandlers = {
-  // 账号管理
-  'xiaohongshu.account.list': async (params) => {
-    const { status = 'all', limit = 20, offset = 0 } = MCPParamsSchema.accountList.parse(params);
+export class MCPHandlers extends MCPProtocol {
+  constructor() {
+    super();
     
-    const query = `
-      SELECT a.*, p.host as proxy_host, p.port as proxy_port, f.fingerprint_id
-      FROM idea_xiaohongshu_accounts a
-      LEFT JOIN idea_xiaohongshu_proxies p ON a.proxy_id = p.id
-      LEFT JOIN idea_xiaohongshu_fingerprints f ON a.fingerprint_id = f.id
-      WHERE ? = 'all' OR a.status = ?
-      ORDER BY a.created_at DESC
-      LIMIT ? OFFSET ?
-    `;
+    // 初始化服务管理器
+    this.accountManager = new AccountManager();
+    this.postManager = new PostManager();
+    this.searchManager = new SearchManager();
+    this.recommendationManager = new RecommendationManager();
     
-    const [rows] = await pool.execute(query, [status, status, limit, offset]);
+    // 注册请求处理器
+    this.registerRequestHandlers();
     
-    return {
-      accounts: rows.map(row => ({
-        id: row.id,
-        username: row.username,
-        nickname: row.nickname,
-        avatar_url: row.avatar_url,
-        status: row.status,
-        login_status: row.login_status,
-        last_login_time: row.last_login_time,
-        proxy: row.proxy_host ? {
-          host: row.proxy_host,
-          port: row.proxy_port
-        } : null,
-        fingerprint: row.fingerprint_id || null,
-        created_at: row.created_at
-      })),
-      total: rows.length,
-      limit,
-      offset
-    };
-  },
-
-  'xiaohongshu.account.add': async (params) => {
-    const { username, phone, email, proxy_id, fingerprint_id } = MCPParamsSchema.accountAdd.parse(params);
+    // 注册通知处理器
+    this.registerNotificationHandlers();
     
-    // 检查用户名是否已存在
-    const [existing] = await pool.execute(
-      'SELECT id FROM idea_xiaohongshu_accounts WHERE username = ?',
-      [username]
-    );
+    // 添加中间件
+    this.registerMiddlewares();
     
-    if (existing.length > 0) {
-      throw {
-        code: MCP_ERROR_CODES.INVALID_PARAMS,
-        message: `账号 ${username} 已存在`
+    logger.info('MCP处理器初始化完成');
+  }
+  
+  /**
+   * 注册请求处理器
+   */
+  registerRequestHandlers() {
+    // 账号管理相关
+    this.registerRequestHandler('xiaohongshu.account.list', this.handleAccountList.bind(this));
+    this.registerRequestHandler('xiaohongshu.account.add', this.handleAccountAdd.bind(this));
+    this.registerRequestHandler('xiaohongshu.account.remove', this.handleAccountRemove.bind(this));
+    this.registerRequestHandler('xiaohongshu.account.login', this.handleAccountLogin.bind(this));
+    this.registerRequestHandler('xiaohongshu.account.logout', this.handleAccountLogout.bind(this));
+    this.registerRequestHandler('xiaohongshu.account.status', this.handleAccountStatus.bind(this));
+    
+    // 内容发布相关
+    this.registerRequestHandler('xiaohongshu.post.create', this.handlePostCreate.bind(this));
+    this.registerRequestHandler('xiaohongshu.post.publish', this.handlePostPublish.bind(this));
+    
+    // 搜索相关
+    this.registerRequestHandler('xiaohongshu.search', this.handleSearch.bind(this));
+    
+    // 推荐相关
+    this.registerRequestHandler('xiaohongshu.recommend', this.handleRecommend.bind(this));
+    
+    logger.debug('请求处理器注册完成');
+  }
+  
+  /**
+   * 注册通知处理器
+   */
+  registerNotificationHandlers() {
+    // 账号状态变更通知
+    this.registerNotificationHandler('xiaohongshu.account.status_changed', this.handleAccountStatusChanged.bind(this));
+    
+    // 内容发布状态通知
+    this.registerNotificationHandler('xiaohongshu.post.status_changed', this.handlePostStatusChanged.bind(this));
+    
+    logger.debug('通知处理器注册完成');
+  }
+  
+  /**
+   * 注册中间件
+   */
+  registerMiddlewares() {
+    // 请求日志中间件
+    this.use(async (context) => {
+      const { request } = context;
+      logger.info(`MCP请求: ${request.method}`, {
+        id: request.id,
+        params: request.params
+      });
+    });
+    
+    // 响应时间监控中间件
+    this.use(async (context, next) => {
+      const startTime = Date.now();
+      await next();
+      const duration = Date.now() - startTime;
+      
+      logger.debug(`MCP请求耗时: ${duration}ms`, {
+        method: context.request.method,
+        id: context.request.id
+      });
+    });
+    
+    logger.debug('中间件注册完成');
+  }
+  
+  /**
+   * 处理账号列表请求
+   * @param {Object} params - 请求参数
+   * @returns {Promise<Object>} 响应数据
+   */
+  async handleAccountList(params) {
+    logger.debug('处理账号列表请求:', params);
+    
+    try {
+      const result = await this.accountManager.getAccountList(params);
+      return {
+        success: true,
+        data: result.data,
+        pagination: result.pagination
       };
+    } catch (error) {
+      logger.error('获取账号列表失败:', error);
+      throw error;
     }
+  }
+  
+  /**
+   * 处理添加账号请求
+   * @param {Object} params - 请求参数
+   * @returns {Promise<Object>} 响应数据
+   */
+  async handleAccountAdd(params) {
+    logger.debug('处理添加账号请求:', params);
     
-    const [result] = await pool.execute(
-      'INSERT INTO idea_xiaohongshu_accounts (username, phone, email, proxy_id, fingerprint_id) VALUES (?, ?, ?, ?, ?)',
-      [username, phone, email, proxy_id, fingerprint_id]
-    );
-    
-    return {
-      account_id: result.insertId,
-      username,
-      status: 'active',
-      created_at: new Date()
-    };
-  },
-
-  'xiaohongshu.account.remove': async (params) => {
-    const { account_id } = params;
-    
-    if (!account_id) {
-      throw {
-        code: MCP_ERROR_CODES.INVALID_PARAMS,
-        message: '缺少account_id参数'
+    try {
+      const result = await this.accountManager.addAccount(params);
+      return {
+        success: true,
+        data: result,
+        message: '账号添加成功'
       };
+    } catch (error) {
+      logger.error('添加账号失败:', error);
+      throw error;
     }
+  }
+  
+  /**
+   * 处理删除账号请求
+   * @param {Object} params - 请求参数
+   * @returns {Promise<Object>} 响应数据
+   */
+  async handleAccountRemove(params) {
+    logger.debug('处理删除账号请求:', params);
     
-    const [result] = await pool.execute(
-      'DELETE FROM idea_xiaohongshu_accounts WHERE id = ?',
-      [account_id]
-    );
-    
-    if (result.affectedRows === 0) {
-      throw {
-        code: MCP_ERROR_CODES.ACCOUNT_NOT_FOUND,
-        message: `账号 ${account_id} 不存在`
-      };
-    }
-    
-    return { success: true, message: `账号 ${account_id} 已删除` };
-  },
-
-  'xiaohongshu.account.login': async (params) => {
-    const { account_id, password, verification_code } = MCPParamsSchema.accountLogin.parse(params);
-    
-    const account = await accountManager.login(account_id, password, verification_code);
-    
-    return {
-      success: true,
-      account: {
-        id: account.id,
-        username: account.username,
-        login_status: true,
-        last_login_time: new Date()
+    try {
+      const { accountId } = params;
+      
+      if (!accountId) {
+        throw new Error('缺少必要参数: accountId');
       }
-    };
-  },
-
-  'xiaohongshu.account.logout': async (params) => {
-    const { account_id } = params;
-    
-    if (!account_id) {
-      throw {
-        code: MCP_ERROR_CODES.INVALID_PARAMS,
-        message: '缺少account_id参数'
+      
+      const result = await this.accountManager.removeAccount(accountId);
+      return {
+        success: true,
+        data: result,
+        message: '账号删除成功'
       };
+    } catch (error) {
+      logger.error('删除账号失败:', error);
+      throw error;
     }
+  }
+  
+  /**
+   * 处理账号登录请求
+   * @param {Object} params - 请求参数
+   * @returns {Promise<Object>} 响应数据
+   */
+  async handleAccountLogin(params) {
+    logger.debug('处理账号登录请求:', params);
     
-    await accountManager.logout(account_id);
-    
-    return { success: true, message: `账号 ${account_id} 已登出` };
-  },
-
-  'xiaohongshu.account.status': async (params) => {
-    const { account_id } = params;
-    
-    if (!account_id) {
-      throw {
-        code: MCP_ERROR_CODES.INVALID_PARAMS,
-        message: '缺少account_id参数'
-      };
-    }
-    
-    const [rows] = await pool.execute(
-      'SELECT id, username, status, login_status, last_login_time FROM idea_xiaohongshu_accounts WHERE id = ?',
-      [account_id]
-    );
-    
-    if (rows.length === 0) {
-      throw {
-        code: MCP_ERROR_CODES.ACCOUNT_NOT_FOUND,
-        message: `账号 ${account_id} 不存在`
-      };
-    }
-    
-    return {
-      account: rows[0]
-    };
-  },
-
-  // 内容发布
-  'xiaohongshu.post.create': async (params) => {
-    const postData = MCPParamsSchema.postCreate.parse(params);
-    
-    const post = await postManager.createPost(postData);
-    
-    return {
-      post_id: post.id,
-      status: post.status,
-      created_at: post.created_at
-    };
-  },
-
-  'xiaohongshu.post.publish': async (params) => {
-    const { post_id } = params;
-    
-    if (!post_id) {
-      throw {
-        code: MCP_ERROR_CODES.INVALID_PARAMS,
-        message: '缺少post_id参数'
-      };
-    }
-    
-    const result = await postManager.publishPost(post_id);
-    
-    return {
-      success: true,
-      post_id: result.post_id,
-      published_time: result.published_time
-    };
-  },
-
-  // 内容搜索
-  'xiaohongshu.search': async (params) => {
-    const searchData = MCPParamsSchema.search.parse(params);
-    
-    const results = await discoveryService.search(searchData);
-    
-    return {
-      results: results.items,
-      total: results.total,
-      has_more: results.hasMore,
-      next_offset: results.nextOffset
-    };
-  },
-
-  // 用户信息获取
-  'xiaohongshu.user.info': async (params) => {
-    const { user_id } = MCPParamsSchema.userInfo.parse(params);
-    
-    const user = await userManager.getUserInfo(user_id);
-    
-    return {
-      user: {
-        id: user.id,
-        user_id: user.user_id,
-        nickname: user.nickname,
-        avatar_url: user.avatar_url,
-        description: user.description,
-        follower_count: user.follower_count,
-        following_count: user.following_count,
-        post_count: user.post_count,
-        like_count: user.like_count,
-        is_verified: user.is_verified,
-        verification_type: user.verification_type,
-        location: user.location,
-        gender: user.gender,
-        age_range: user.age_range,
-        last_active: user.last_active,
-        created_at: user.created_at
+    try {
+      const { username, password, verificationCode, proxyId, fingerprintId } = params;
+      
+      if (!username || !password) {
+        throw new Error('缺少必要参数: username 或 password');
       }
-    };
-  },
-
-  // 评论管理
-  'xiaohongshu.comment.add': async (params) => {
-    const commentData = MCPParamsSchema.commentAdd.parse(params);
-    
-    const comment = await commentManager.addComment(commentData);
-    
-    return {
-      comment_id: comment.comment_id,
-      success: true,
-      created_at: comment.created_at
-    };
-  },
-
-  'xiaohongshu.comment.list': async (params) => {
-    const { post_id, limit = 20, offset = 0 } = MCPParamsSchema.commentList.parse(params);
-    
-    const comments = await commentManager.getComments(post_id, limit, offset);
-    
-    return {
-      comments: comments.items,
-      total: comments.total,
-      has_more: comments.hasMore,
-      next_offset: comments.nextOffset
-    };
-  },
-
-  // 系统管理
-  'xiaohongshu.system.status': async (params) => {
-    const status = await systemService.getSystemStatus();
-    
-    return {
-      system: {
-        version: status.version,
-        uptime: status.uptime,
-        memory_usage: status.memoryUsage,
-        cpu_usage: status.cpuUsage,
-        active_accounts: status.activeAccounts,
-        active_tasks: status.activeTasks,
-        total_requests: status.totalRequests,
-        success_rate: status.successRate
-      },
-      timestamp: new Date()
-    };
-  },
-
-  'xiaohongshu.system.config': async (params) => {
-    const { config_key } = params;
-    
-    if (config_key) {
-      const config = await systemService.getConfig(config_key);
-      return { config };
-    } else {
-      const configs = await systemService.getAllConfigs();
-      return { configs };
+      
+      const result = await this.accountManager.loginAccount({
+        username,
+        password,
+        verificationCode,
+        proxyId,
+        fingerprintId
+      });
+      
+      return {
+        success: true,
+        data: result,
+        message: '登录成功'
+      };
+    } catch (error) {
+      logger.error('账号登录失败:', error);
+      
+      // 特殊错误处理
+      if (error.message.includes('验证码')) {
+        throw new Error('需要验证码，请提供verificationCode参数');
+      }
+      
+      if (error.message.includes('密码错误')) {
+        throw new Error('用户名或密码错误');
+      }
+      
+      if (error.message.includes('账号被封')) {
+        throw new Error('该账号已被封禁');
+      }
+      
+      throw error;
     }
-  },
-
-  'xiaohongshu.system.stats': async (params) => {
-    const { date_range = '7d' } = params;
+  }
+  
+  /**
+   * 处理账号登出请求
+   * @param {Object} params - 请求参数
+   * @returns {Promise<Object>} 响应数据
+   */
+  async handleAccountLogout(params) {
+    logger.debug('处理账号登出请求:', params);
     
-    const stats = await systemService.getStats(date_range);
+    try {
+      const { accountId } = params;
+      
+      if (!accountId) {
+        throw new Error('缺少必要参数: accountId');
+      }
+      
+      const result = await this.accountManager.logoutAccount(accountId);
+      return {
+        success: true,
+        data: result,
+        message: '登出成功'
+      };
+    } catch (error) {
+      logger.error('账号登出失败:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 处理账号状态检测请求
+   * @param {Object} params - 请求参数
+   * @returns {Promise<Object>} 响应数据
+   */
+  async handleAccountStatus(params) {
+    logger.debug('处理账号状态检测请求:', params);
     
+    try {
+      const { accountId } = params;
+      
+      if (!accountId) {
+        throw new Error('缺少必要参数: accountId');
+      }
+      
+      const result = await this.accountManager.checkAccountStatus(accountId);
+      return {
+        success: true,
+        data: result
+      };
+    } catch (error) {
+      logger.error('检测账号状态失败:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 处理创建笔记请求
+   * @param {Object} params - 请求参数
+   * @returns {Promise<Object>} 响应数据
+   */
+  async handlePostCreate(params) {
+    logger.debug('处理创建笔记请求:', params);
+    
+    try {
+      const { accountId, title, content, type, images, video, tags, topic, scheduledTime } = params;
+      
+      if (!accountId || !title) {
+        throw new Error('缺少必要参数: accountId 或 title');
+      }
+      
+      // 验证账号状态
+      const accountStatus = await this.accountManager.checkAccountStatus(accountId);
+      if (!accountStatus.isLoggedIn) {
+        throw new Error('账号未登录，请先登录');
+      }
+      
+      const result = await this.postManager.createPost({
+        accountId,
+        title,
+        content,
+        type,
+        images,
+        video,
+        tags,
+        topic,
+        scheduledTime
+      });
+      
+      return {
+        success: true,
+        data: result,
+        message: '笔记创建成功'
+      };
+    } catch (error) {
+      logger.error('创建笔记失败:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 处理发布笔记请求
+   * @param {Object} params - 请求参数
+   * @returns {Promise<Object>} 响应数据
+   */
+  async handlePostPublish(params) {
+    logger.debug('处理发布笔记请求:', params);
+    
+    try {
+      const { postId } = params;
+      
+      if (!postId) {
+        throw new Error('缺少必要参数: postId');
+      }
+      
+      const result = await this.postManager.publishPost(postId);
+      return {
+        success: true,
+        data: result,
+        message: '笔记发布成功'
+      };
+    } catch (error) {
+      logger.error('发布笔记失败:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 处理搜索请求
+   * @param {Object} params - 请求参数
+   * @returns {Promise<Object>} 响应数据
+   */
+  async handleSearch(params) {
+    logger.debug('处理搜索请求:', params);
+    
+    try {
+      const { keyword, type, page, pageSize, sort } = params;
+      
+      if (!keyword) {
+        throw new Error('缺少必要参数: keyword');
+      }
+      
+      const result = await this.searchManager.search({
+        keyword,
+        type,
+        page,
+        pageSize,
+        sort
+      });
+      
+      return {
+        success: true,
+        data: result.data,
+        pagination: result.pagination
+      };
+    } catch (error) {
+      logger.error('搜索失败:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 处理推荐请求
+   * @param {Object} params - 请求参数
+   * @returns {Promise<Object>} 响应数据
+   */
+  async handleRecommend(params) {
+    logger.debug('处理推荐请求:', params);
+    
+    try {
+      const { accountId, category, page, pageSize } = params;
+      
+      const result = await this.recommendationManager.getRecommendations({
+        accountId,
+        category,
+        page,
+        pageSize
+      });
+      
+      return {
+        success: true,
+        data: result.data,
+        pagination: result.pagination
+      };
+    } catch (error) {
+      logger.error('获取推荐失败:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 处理账号状态变更通知
+   * @param {Object} params - 通知参数
+   */
+  async handleAccountStatusChanged(params) {
+    logger.debug('处理账号状态变更通知:', params);
+    
+    try {
+      const { accountId, status, reason } = params;
+      
+      // 更新账号状态
+      await this.accountManager.updateAccountStatus(accountId, status, reason);
+      
+      logger.info(`账号状态变更: ${accountId} -> ${status}`, { reason });
+    } catch (error) {
+      logger.error('处理账号状态变更通知失败:', error);
+    }
+  }
+  
+  /**
+   * 处理内容发布状态变更通知
+   * @param {Object} params - 通知参数
+   */
+  async handlePostStatusChanged(params) {
+    logger.debug('处理内容发布状态变更通知:', params);
+    
+    try {
+      const { postId, status, reason } = params;
+      
+      // 更新发布状态
+      await this.postManager.updatePostStatus(postId, status, reason);
+      
+      logger.info(`发布状态变更: ${postId} -> ${status}`, { reason });
+    } catch (error) {
+      logger.error('处理内容发布状态变更通知失败:', error);
+    }
+  }
+  
+  /**
+   * 获取支持的MCP方法列表
+   * @returns {Array} 方法列表
+   */
+  getSupportedMethods() {
+    return [
+      // 账号管理
+      'xiaohongshu.account.list',
+      'xiaohongshu.account.add',
+      'xiaohongshu.account.remove',
+      'xiaohongshu.account.login',
+      'xiaohongshu.account.logout',
+      'xiaohongshu.account.status',
+      
+      // 内容发布
+      'xiaohongshu.post.create',
+      'xiaohongshu.post.publish',
+      
+      // 搜索
+      'xiaohongshu.search',
+      
+      // 推荐
+      'xiaohongshu.recommend'
+    ];
+  }
+  
+  /**
+   * 获取处理器统计信息
+   * @returns {Object} 统计信息
+   */
+  getStats() {
     return {
-      stats: {
-        total_accounts: stats.totalAccounts,
-        active_accounts: stats.activeAccounts,
-        total_posts: stats.totalPosts,
-        total_tasks: stats.totalTasks,
-        success_tasks: stats.successTasks,
-        failed_tasks: stats.failedTasks,
-        daily_stats: stats.dailyStats
-      },
-      date_range: date_range
+      requestHandlers: this.requestHandlers.size,
+      notificationHandlers: this.notificationHandlers.size,
+      middlewares: this.middlewares.length,
+      supportedMethods: this.getSupportedMethods()
     };
   }
-};
+}
+
+// 创建全局MCP处理器实例
+const mcpHandlers = new MCPHandlers();
 
 /**
- * 获取指定处理器
- * @param {string} method - MCP方法名
- * @returns {Function} 处理器函数
+ * 获取MCP处理器实例
+ * @returns {MCPHandlers} MCP处理器实例
  */
-export function getHandler(method) {
-  const handler = mcpHandlers[method];
-  
-  if (!handler) {
-    throw {
-      code: MCP_ERROR_CODES.METHOD_NOT_FOUND,
-      message: `方法 ${method} 不存在`
-    };
-  }
-  
-  return handler;
+export function getMCPHandlers() {
+  return mcpHandlers;
 }
 
 /**
- * 获取所有支持的MCP方法
- * @returns {Array} 方法列表
+ * 初始化MCP处理器
+ * @returns {Promise<void>}
  */
-export function getSupportedMethods() {
-  return Object.keys(mcpHandlers);
+export async function initializeMCPHandlers() {
+  logger.info('初始化MCP处理器...');
+  // MCP处理器在构造函数中已初始化
+  logger.info('MCP处理器初始化完成');
 }
