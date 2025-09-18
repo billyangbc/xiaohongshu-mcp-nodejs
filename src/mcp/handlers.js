@@ -1,505 +1,563 @@
 /**
  * MCP协议处理器
- * 实现小红书MCP协议的各种功能
+ * 处理MCP协议请求和响应
  */
 
-import { MCPProtocol, MCP_ERROR_CODES } from './protocol.js';
 import { logger } from '../utils/logger.js';
+import { MCPError, MCP_ERROR_CODES } from './protocol.js';
+import { MCPParamsSchema } from './schemas.js';
 import { AccountManager } from '../services/account-manager.js';
 import { PostManager } from '../services/post-manager.js';
-import { SearchManager } from '../services/search-manager.js';
-import { RecommendationManager } from '../services/recommendation-manager.js';
+import { TaskManager } from '../services/task-manager.js';
+import { interactionHandlers } from './interaction-handlers.js';
 
 /**
- * MCP处理器类
+ * 账号管理器实例
  */
-export class MCPHandlers extends MCPProtocol {
-  constructor() {
-    super();
-    
-    // 初始化服务管理器
-    this.accountManager = new AccountManager();
-    this.postManager = new PostManager();
-    this.searchManager = new SearchManager();
-    this.recommendationManager = new RecommendationManager();
-    
-    // 注册请求处理器
-    this.registerRequestHandlers();
-    
-    // 注册通知处理器
-    this.registerNotificationHandlers();
-    
-    // 添加中间件
-    this.registerMiddlewares();
-    
-    logger.info('MCP处理器初始化完成');
-  }
+const accountManager = new AccountManager();
+
+/**
+ * 内容发布管理器实例
+ */
+const postManager = new PostManager();
+
+/**
+ * 任务管理器实例
+ */
+const taskManager = new TaskManager();
+
+/**
+ * MCP协议处理器
+ */
+export const mcpHandlers = {
   
   /**
-   * 注册请求处理器
+   * 账号管理相关功能
    */
-  registerRequestHandlers() {
-    // 账号管理相关
-    this.registerRequestHandler('xiaohongshu.account.list', this.handleAccountList.bind(this));
-    this.registerRequestHandler('xiaohongshu.account.add', this.handleAccountAdd.bind(this));
-    this.registerRequestHandler('xiaohongshu.account.remove', this.handleAccountRemove.bind(this));
-    this.registerRequestHandler('xiaohongshu.account.login', this.handleAccountLogin.bind(this));
-    this.registerRequestHandler('xiaohongshu.account.logout', this.handleAccountLogout.bind(this));
-    this.registerRequestHandler('xiaohongshu.account.status', this.handleAccountStatus.bind(this));
-    
-    // 内容发布相关
-    this.registerRequestHandler('xiaohongshu.post.create', this.handlePostCreate.bind(this));
-    this.registerRequestHandler('xiaohongshu.post.publish', this.handlePostPublish.bind(this));
-    
-    // 搜索相关
-    this.registerRequestHandler('xiaohongshu.search', this.handleSearch.bind(this));
-    
-    // 推荐相关
-    this.registerRequestHandler('xiaohongshu.recommend', this.handleRecommend.bind(this));
-    
-    logger.debug('请求处理器注册完成');
-  }
   
-  /**
-   * 注册通知处理器
-   */
-  registerNotificationHandlers() {
-    // 账号状态变更通知
-    this.registerNotificationHandler('xiaohongshu.account.status_changed', this.handleAccountStatusChanged.bind(this));
-    
-    // 内容发布状态通知
-    this.registerNotificationHandler('xiaohongshu.post.status_changed', this.handlePostStatusChanged.bind(this));
-    
-    logger.debug('通知处理器注册完成');
-  }
-  
-  /**
-   * 注册中间件
-   */
-  registerMiddlewares() {
-    // 请求日志中间件
-    this.use(async (context) => {
-      const { request } = context;
-      logger.info(`MCP请求: ${request.method}`, {
-        id: request.id,
-        params: request.params
-      });
-    });
-    
-    // 响应时间监控中间件
-    this.use(async (context, next) => {
-      const startTime = Date.now();
-      await next();
-      const duration = Date.now() - startTime;
-      
-      logger.debug(`MCP请求耗时: ${duration}ms`, {
-        method: context.request.method,
-        id: context.request.id
-      });
-    });
-    
-    logger.debug('中间件注册完成');
-  }
-  
-  /**
-   * 处理账号列表请求
-   * @param {Object} params - 请求参数
-   * @returns {Promise<Object>} 响应数据
-   */
-  async handleAccountList(params) {
-    logger.debug('处理账号列表请求:', params);
-    
+  // 获取账号列表
+  'xiaohongshu.account.list': async (params) => {
     try {
-      const result = await this.accountManager.getAccountList(params);
+      logger.info('获取账号列表:', params);
+      
+      const accounts = await accountManager.listAccounts(params);
       return {
         success: true,
-        data: result.data,
-        pagination: result.pagination
+        data: accounts,
+        message: '获取账号列表成功'
       };
     } catch (error) {
       logger.error('获取账号列表失败:', error);
-      throw error;
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '获取账号列表失败');
     }
-  }
+  },
   
-  /**
-   * 处理添加账号请求
-   * @param {Object} params - 请求参数
-   * @returns {Promise<Object>} 响应数据
-   */
-  async handleAccountAdd(params) {
-    logger.debug('处理添加账号请求:', params);
-    
+  // 添加账号
+  'xiaohongshu.account.add': async (params) => {
     try {
-      const result = await this.accountManager.addAccount(params);
+      logger.info('添加账号:', params);
+      
+      // 参数验证
+      const validation = MCPParamsSchema.validateAccountAdd(params);
+      if (!validation.valid) {
+        throw new MCPError(MCP_ERROR_CODES.INVALID_PARAMS, validation.errors.join(', '));
+      }
+      
+      const account = await accountManager.addAccount(params);
       return {
         success: true,
-        data: result,
-        message: '账号添加成功'
+        data: account,
+        message: '添加账号成功'
       };
     } catch (error) {
       logger.error('添加账号失败:', error);
-      throw error;
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '添加账号失败');
     }
-  }
+  },
   
-  /**
-   * 处理删除账号请求
-   * @param {Object} params - 请求参数
-   * @returns {Promise<Object>} 响应数据
-   */
-  async handleAccountRemove(params) {
-    logger.debug('处理删除账号请求:', params);
-    
+  // 删除账号
+  'xiaohongshu.account.remove': async (params) => {
     try {
-      const { accountId } = params;
+      logger.info('删除账号:', params);
       
-      if (!accountId) {
-        throw new Error('缺少必要参数: accountId');
+      // 参数验证
+      const validation = MCPParamsSchema.validateAccountRemove(params);
+      if (!validation.valid) {
+        throw new MCPError(MCP_ERROR_CODES.INVALID_PARAMS, validation.errors.join(', '));
       }
       
-      const result = await this.accountManager.removeAccount(accountId);
+      const result = await accountManager.removeAccount(params.accountId);
       return {
         success: true,
         data: result,
-        message: '账号删除成功'
+        message: '删除账号成功'
       };
     } catch (error) {
       logger.error('删除账号失败:', error);
-      throw error;
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '删除账号失败');
     }
-  }
+  },
   
-  /**
-   * 处理账号登录请求
-   * @param {Object} params - 请求参数
-   * @returns {Promise<Object>} 响应数据
-   */
-  async handleAccountLogin(params) {
-    logger.debug('处理账号登录请求:', params);
-    
+  // 账号登录
+  'xiaohongshu.account.login': async (params) => {
     try {
-      const { username, password, verificationCode, proxyId, fingerprintId } = params;
+      logger.info('账号登录:', params);
       
-      if (!username || !password) {
-        throw new Error('缺少必要参数: username 或 password');
+      // 参数验证
+      const validation = MCPParamsSchema.validateAccountLogin(params);
+      if (!validation.valid) {
+        throw new MCPError(MCP_ERROR_CODES.INVALID_PARAMS, validation.errors.join(', '));
       }
       
-      const result = await this.accountManager.loginAccount({
-        username,
-        password,
-        verificationCode,
-        proxyId,
-        fingerprintId
-      });
-      
+      const result = await accountManager.loginAccount(params);
       return {
         success: true,
         data: result,
-        message: '登录成功'
+        message: '账号登录成功'
       };
     } catch (error) {
       logger.error('账号登录失败:', error);
-      
-      // 特殊错误处理
-      if (error.message.includes('验证码')) {
-        throw new Error('需要验证码，请提供verificationCode参数');
+      if (error instanceof MCPError) {
+        throw error;
       }
-      
-      if (error.message.includes('密码错误')) {
-        throw new Error('用户名或密码错误');
-      }
-      
-      if (error.message.includes('账号被封')) {
-        throw new Error('该账号已被封禁');
-      }
-      
-      throw error;
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '账号登录失败');
     }
-  }
+  },
   
-  /**
-   * 处理账号登出请求
-   * @param {Object} params - 请求参数
-   * @returns {Promise<Object>} 响应数据
-   */
-  async handleAccountLogout(params) {
-    logger.debug('处理账号登出请求:', params);
-    
+  // 账号登出
+  'xiaohongshu.account.logout': async (params) => {
     try {
-      const { accountId } = params;
+      logger.info('账号登出:', params);
       
-      if (!accountId) {
-        throw new Error('缺少必要参数: accountId');
+      // 参数验证
+      const validation = MCPParamsSchema.validateAccountLogout(params);
+      if (!validation.valid) {
+        throw new MCPError(MCP_ERROR_CODES.INVALID_PARAMS, validation.errors.join(', '));
       }
       
-      const result = await this.accountManager.logoutAccount(accountId);
+      const result = await accountManager.logoutAccount(params.accountId);
       return {
         success: true,
         data: result,
-        message: '登出成功'
+        message: '账号登出成功'
       };
     } catch (error) {
       logger.error('账号登出失败:', error);
-      throw error;
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '账号登出失败');
     }
-  }
+  },
   
-  /**
-   * 处理账号状态检测请求
-   * @param {Object} params - 请求参数
-   * @returns {Promise<Object>} 响应数据
-   */
-  async handleAccountStatus(params) {
-    logger.debug('处理账号状态检测请求:', params);
-    
+  // 获取账号状态
+  'xiaohongshu.account.status': async (params) => {
     try {
-      const { accountId } = params;
+      logger.info('获取账号状态:', params);
       
-      if (!accountId) {
-        throw new Error('缺少必要参数: accountId');
+      // 参数验证
+      const validation = MCPParamsSchema.validateAccountStatus(params);
+      if (!validation.valid) {
+        throw new MCPError(MCP_ERROR_CODES.INVALID_PARAMS, validation.errors.join(', '));
       }
       
-      const result = await this.accountManager.checkAccountStatus(accountId);
+      const status = await accountManager.getAccountStatus(params.accountId);
       return {
         success: true,
-        data: result
+        data: status,
+        message: '获取账号状态成功'
       };
     } catch (error) {
-      logger.error('检测账号状态失败:', error);
-      throw error;
+      logger.error('获取账号状态失败:', error);
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '获取账号状态失败');
     }
-  }
+  },
   
   /**
-   * 处理创建笔记请求
-   * @param {Object} params - 请求参数
-   * @returns {Promise<Object>} 响应数据
+   * 内容发布相关功能
    */
-  async handlePostCreate(params) {
-    logger.debug('处理创建笔记请求:', params);
-    
+  
+  // 创建笔记
+  'xiaohongshu.post.create': async (params) => {
     try {
-      const { accountId, title, content, type, images, video, tags, topic, scheduledTime } = params;
+      logger.info('创建笔记:', params);
       
-      if (!accountId || !title) {
-        throw new Error('缺少必要参数: accountId 或 title');
+      // 参数验证
+      const validation = MCPParamsSchema.validatePostCreate(params);
+      if (!validation.valid) {
+        throw new MCPError(MCP_ERROR_CODES.INVALID_PARAMS, validation.errors.join(', '));
       }
       
-      // 验证账号状态
-      const accountStatus = await this.accountManager.checkAccountStatus(accountId);
-      if (!accountStatus.isLoggedIn) {
-        throw new Error('账号未登录，请先登录');
-      }
-      
-      const result = await this.postManager.createPost({
-        accountId,
-        title,
-        content,
-        type,
-        images,
-        video,
-        tags,
-        topic,
-        scheduledTime
-      });
-      
+      const post = await postManager.createPost(params);
       return {
         success: true,
-        data: result,
-        message: '笔记创建成功'
+        data: post,
+        message: '创建笔记成功'
       };
     } catch (error) {
       logger.error('创建笔记失败:', error);
-      throw error;
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '创建笔记失败');
     }
-  }
+  },
   
-  /**
-   * 处理发布笔记请求
-   * @param {Object} params - 请求参数
-   * @returns {Promise<Object>} 响应数据
-   */
-  async handlePostPublish(params) {
-    logger.debug('处理发布笔记请求:', params);
-    
+  // 发布笔记
+  'xiaohongshu.post.publish': async (params) => {
     try {
-      const { postId } = params;
+      logger.info('发布笔记:', params);
       
-      if (!postId) {
-        throw new Error('缺少必要参数: postId');
+      // 参数验证
+      const validation = MCPParamsSchema.validatePostPublish(params);
+      if (!validation.valid) {
+        throw new MCPError(MCP_ERROR_CODES.INVALID_PARAMS, validation.errors.join(', '));
       }
       
-      const result = await this.postManager.publishPost(postId);
+      const result = await postManager.publishPost(params);
       return {
         success: true,
         data: result,
-        message: '笔记发布成功'
+        message: '发布笔记成功'
       };
     } catch (error) {
       logger.error('发布笔记失败:', error);
-      throw error;
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '发布笔记失败');
     }
-  }
+  },
   
-  /**
-   * 处理搜索请求
-   * @param {Object} params - 请求参数
-   * @returns {Promise<Object>} 响应数据
-   */
-  async handleSearch(params) {
-    logger.debug('处理搜索请求:', params);
-    
+  // 搜索笔记
+  'xiaohongshu.post.search': async (params) => {
     try {
-      const { keyword, type, page, pageSize, sort } = params;
+      logger.info('搜索笔记:', params);
       
-      if (!keyword) {
-        throw new Error('缺少必要参数: keyword');
+      // 参数验证
+      const validation = MCPParamsSchema.validatePostSearch(params);
+      if (!validation.valid) {
+        throw new MCPError(MCP_ERROR_CODES.INVALID_PARAMS, validation.errors.join(', '));
       }
       
-      const result = await this.searchManager.search({
-        keyword,
-        type,
-        page,
-        pageSize,
-        sort
-      });
+      const results = await postManager.searchPosts(params);
+      return {
+        success: true,
+        data: results,
+        message: '搜索笔记成功'
+      };
+    } catch (error) {
+      logger.error('搜索笔记失败:', error);
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '搜索笔记失败');
+    }
+  },
+  
+  // 获取推荐笔记
+  'xiaohongshu.post.recommend': async (params) => {
+    try {
+      logger.info('获取推荐笔记:', params);
+      
+      // 参数验证
+      const validation = MCPParamsSchema.validatePostRecommend(params);
+      if (!validation.valid) {
+        throw new MCPError(MCP_ERROR_CODES.INVALID_PARAMS, validation.errors.join(', '));
+      }
+      
+      const results = await postManager.getRecommendPosts(params);
+      return {
+        success: true,
+        data: results,
+        message: '获取推荐笔记成功'
+      };
+    } catch (error) {
+      logger.error('获取推荐笔记失败:', error);
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '获取推荐笔记失败');
+    }
+  },
+  
+  /**
+   * 任务调度相关功能
+   */
+  
+  // 创建任务
+  'xiaohongshu.task.create': async (params) => {
+    try {
+      logger.info('创建任务:', params);
+      
+      // 参数验证
+      const validation = MCPParamsSchema.validateTaskCreate(params);
+      if (!validation.valid) {
+        throw new MCPError(MCP_ERROR_CODES.INVALID_PARAMS, validation.errors.join(', '));
+      }
+      
+      const task = await taskManager.createTask(params);
+      return {
+        success: true,
+        data: task,
+        message: '创建任务成功'
+      };
+    } catch (error) {
+      logger.error('创建任务失败:', error);
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '创建任务失败');
+    }
+  },
+  
+  // 获取任务列表
+  'xiaohongshu.task.list': async (params) => {
+    try {
+      logger.info('获取任务列表:', params);
+      
+      const tasks = await taskManager.listTasks(params);
+      return {
+        success: true,
+        data: tasks,
+        message: '获取任务列表成功'
+      };
+    } catch (error) {
+      logger.error('获取任务列表失败:', error);
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '获取任务列表失败');
+    }
+  },
+  
+  // 取消任务
+  'xiaohongshu.task.cancel': async (params) => {
+    try {
+      logger.info('取消任务:', params);
+      
+      // 参数验证
+      const validation = MCPParamsSchema.validateTaskCancel(params);
+      if (!validation.valid) {
+        throw new MCPError(MCP_ERROR_CODES.INVALID_PARAMS, validation.errors.join(', '));
+      }
+      
+      const result = await taskManager.cancelTask(params.taskId);
+      return {
+        success: true,
+        data: result,
+        message: '取消任务成功'
+      };
+    } catch (error) {
+      logger.error('取消任务失败:', error);
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '取消任务失败');
+    }
+  },
+  
+  /**
+   * 互动功能相关
+   */
+  
+  // 点赞笔记
+  'xiaohongshu.interaction.like': async (params) => {
+    try {
+      logger.info('MCP点赞请求:', params);
+      
+      // 调用互动处理器
+      const result = await interactionHandlers['xiaohongshu.interaction.like'](params);
+      
+      if (!result.success) {
+        throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, result.error);
+      }
       
       return {
         success: true,
         data: result.data,
-        pagination: result.pagination
+        message: result.message
       };
     } catch (error) {
-      logger.error('搜索失败:', error);
-      throw error;
+      logger.error('MCP点赞失败:', error);
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '点赞操作失败');
     }
-  }
+  },
   
-  /**
-   * 处理推荐请求
-   * @param {Object} params - 请求参数
-   * @returns {Promise<Object>} 响应数据
-   */
-  async handleRecommend(params) {
-    logger.debug('处理推荐请求:', params);
-    
+  // 评论笔记
+  'xiaohongshu.interaction.comment': async (params) => {
     try {
-      const { accountId, category, page, pageSize } = params;
+      logger.info('MCP评论请求:', params);
       
-      const result = await this.recommendationManager.getRecommendations({
-        accountId,
-        category,
-        page,
-        pageSize
-      });
+      // 调用互动处理器
+      const result = await interactionHandlers['xiaohongshu.interaction.comment'](params);
+      
+      if (!result.success) {
+        throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, result.error);
+      }
       
       return {
         success: true,
         data: result.data,
-        pagination: result.pagination
+        message: result.message
       };
     } catch (error) {
-      logger.error('获取推荐失败:', error);
-      throw error;
+      logger.error('MCP评论失败:', error);
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '评论操作失败');
     }
-  }
+  },
   
-  /**
-   * 处理账号状态变更通知
-   * @param {Object} params - 通知参数
-   */
-  async handleAccountStatusChanged(params) {
-    logger.debug('处理账号状态变更通知:', params);
-    
+  // 关注用户
+  'xiaohongshu.interaction.follow': async (params) => {
     try {
-      const { accountId, status, reason } = params;
+      logger.info('MCP关注请求:', params);
       
-      // 更新账号状态
-      await this.accountManager.updateAccountStatus(accountId, status, reason);
+      // 调用互动处理器
+      const result = await interactionHandlers['xiaohongshu.interaction.follow'](params);
       
-      logger.info(`账号状态变更: ${accountId} -> ${status}`, { reason });
+      if (!result.success) {
+        throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, result.error);
+      }
+      
+      return {
+        success: true,
+        data: result.data,
+        message: result.message
+      };
     } catch (error) {
-      logger.error('处理账号状态变更通知失败:', error);
+      logger.error('MCP关注失败:', error);
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '关注操作失败');
     }
-  }
+  },
   
-  /**
-   * 处理内容发布状态变更通知
-   * @param {Object} params - 通知参数
-   */
-  async handlePostStatusChanged(params) {
-    logger.debug('处理内容发布状态变更通知:', params);
-    
+  // 批量点赞
+  'xiaohongshu.interaction.batchLike': async (params) => {
     try {
-      const { postId, status, reason } = params;
+      logger.info('MCP批量点赞请求:', params);
       
-      // 更新发布状态
-      await this.postManager.updatePostStatus(postId, status, reason);
+      // 调用互动处理器
+      const result = await interactionHandlers['xiaohongshu.interaction.batchLike'](params);
       
-      logger.info(`发布状态变更: ${postId} -> ${status}`, { reason });
+      if (!result.success) {
+        throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, result.error);
+      }
+      
+      return {
+        success: true,
+        data: result.data,
+        message: result.message
+      };
     } catch (error) {
-      logger.error('处理内容发布状态变更通知失败:', error);
+      logger.error('MCP批量点赞失败:', error);
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '批量点赞操作失败');
+    }
+  },
+  
+  // 获取互动历史
+  'xiaohongshu.interaction.getHistory': async (params) => {
+    try {
+      logger.info('MCP获取互动历史请求:', params);
+      
+      // 调用互动处理器
+      const result = await interactionHandlers['xiaohongshu.interaction.getHistory'](params);
+      
+      if (!result.success) {
+        throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, result.error);
+      }
+      
+      return {
+        success: true,
+        data: result.data,
+        pagination: result.pagination,
+        message: result.message
+      };
+    } catch (error) {
+      logger.error('MCP获取互动历史失败:', error);
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '获取互动历史失败');
+    }
+  },
+  
+  // 获取互动统计
+  'xiaohongshu.interaction.getStats': async (params) => {
+    try {
+      logger.info('MCP获取互动统计请求:', params);
+      
+      // 调用互动处理器
+      const result = await interactionHandlers['xiaohongshu.interaction.getStats'](params);
+      
+      if (!result.success) {
+        throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, result.error);
+      }
+      
+      return {
+        success: true,
+        data: result.data,
+        message: result.message
+      };
+    } catch (error) {
+      logger.error('MCP获取互动统计失败:', error);
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '获取互动统计失败');
+    }
+  },
+  
+  /**
+   * 系统相关功能
+   */
+  
+  // 获取系统状态
+  'xiaohongshu.system.status': async (params) => {
+    try {
+      logger.info('获取系统状态:', params);
+      
+      const status = {
+        service: 'xiaohongshu-mcp-nodejs',
+        version: '1.0.0',
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+        accounts: {
+          total: await accountManager.getTotalAccounts(),
+          active: await accountManager.getActiveAccounts(),
+          loggedIn: await accountManager.getLoggedInAccounts()
+        },
+        tasks: {
+          total: await taskManager.getTotalTasks(),
+          running: await taskManager.getRunningTasks(),
+          completed: await taskManager.getCompletedTasks()
+        }
+      };
+      
+      return {
+        success: true,
+        data: status,
+        message: '获取系统状态成功'
+      };
+    } catch (error) {
+      logger.error('获取系统状态失败:', error);
+      throw new MCPError(MCP_ERROR_CODES.INTERNAL_ERROR, '获取系统状态失败');
     }
   }
-  
-  /**
-   * 获取支持的MCP方法列表
-   * @returns {Array} 方法列表
-   */
-  getSupportedMethods() {
-    return [
-      // 账号管理
-      'xiaohongshu.account.list',
-      'xiaohongshu.account.add',
-      'xiaohongshu.account.remove',
-      'xiaohongshu.account.login',
-      'xiaohongshu.account.logout',
-      'xiaohongshu.account.status',
-      
-      // 内容发布
-      'xiaohongshu.post.create',
-      'xiaohongshu.post.publish',
-      
-      // 搜索
-      'xiaohongshu.search',
-      
-      // 推荐
-      'xiaohongshu.recommend'
-    ];
-  }
-  
-  /**
-   * 获取处理器统计信息
-   * @returns {Object} 统计信息
-   */
-  getStats() {
-    return {
-      requestHandlers: this.requestHandlers.size,
-      notificationHandlers: this.notificationHandlers.size,
-      middlewares: this.middlewares.length,
-      supportedMethods: this.getSupportedMethods()
-    };
-  }
-}
-
-// 创建全局MCP处理器实例
-const mcpHandlers = new MCPHandlers();
-
-/**
- * 获取MCP处理器实例
- * @returns {MCPHandlers} MCP处理器实例
- */
-export function getMCPHandlers() {
-  return mcpHandlers;
-}
-
-/**
- * 初始化MCP处理器
- * @returns {Promise<void>}
- */
-export async function initializeMCPHandlers() {
-  logger.info('初始化MCP处理器...');
-  // MCP处理器在构造函数中已初始化
-  logger.info('MCP处理器初始化完成');
-}
+};
