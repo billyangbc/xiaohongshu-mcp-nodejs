@@ -23,7 +23,9 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 COPY package*.json ./
 
 # 安装依赖
-RUN npm ci --only=production && npm cache clean --force
+#RUN npm ci --only=production && npm cache clean --force
+RUN npm install
+#RUN npm cache clean
 
 # 复制应用代码
 COPY . .
