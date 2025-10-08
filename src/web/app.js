@@ -40,7 +40,7 @@ class WebApplication {
 
     this.setupMiddleware();
     // this.setupSocketHandlers(); // Disabled for now
-    this.setupErrorHandling();
+    // setupErrorHandling() will be called after routes are set up in start() method
   }
 
   /**
@@ -61,6 +61,7 @@ class WebApplication {
     
     // 请求日志
     this.app.use((req, res, next) => {
+      console.log(`收到请求: ${req.method} ${req.path}`);
       logger.info(`${req.method} ${req.path}`, {
         ip: req.ip,
         userAgent: req.get('User-Agent')
@@ -215,6 +216,10 @@ class WebApplication {
       // 设置路由（需要异步导入）
       await this.setupRoutes();
       logger.info('路由设置完成');
+
+      // 设置错误处理（必须在路由之后）
+      this.setupErrorHandling();
+      logger.info('错误处理设置完成');
 
       // 启动服务器
       const port = this.options?.config?.app?.port || getConfig('server.port');
