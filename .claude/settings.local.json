@@ -10,7 +10,11 @@
       "Bash(npm start)",
       "Bash(docker-compose up:*)",
       "Bash(docker-compose logs:*)",
-      "Bash(docker-compose stop:*)"
+      "Bash(docker-compose stop:*)",
+      "Bash(docker-compose restart:*)",
+      "Bash(docker exec:*)",
+      "Bash(timeout:*)",
+      "Bash(docker-compose ps:*)"
     ],
     "deny": [],
     "ask": []
