@@ -7,6 +7,7 @@ import { createWriteStream } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import os from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -153,7 +154,7 @@ export class Logger {
       message,
       meta,
       pid: process.pid,
-      hostname: require('os').hostname()
+      hostname: os.hostname()
     };
     
     return JSON.stringify(logEntry);

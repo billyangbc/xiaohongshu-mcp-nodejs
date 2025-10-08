@@ -9,12 +9,11 @@ import { Server as socketIo } from 'socket.io';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
-import rateLimit from 'express-rate-limit';
 import { logger } from '../utils/logger.js';
 import MCPManager from '../core/mcp-manager.js';
 import TaskManager from '../core/task-manager.js';
-import DatabaseManager from '../core/database-manager.js';
-import config from '../config/config-manager.js';
+import DatabaseManager from '../database/database-manager.js';
+import { getConfig } from '../config/config-manager.js';
 
 class WebApplication {
   constructor() {
@@ -22,17 +21,16 @@ class WebApplication {
     this.server = http.createServer(this.app);
     this.io = socketIo(this.server, {
       cors: {
-        origin: config.get('server.cors.origin'),
+        origin: getConfig('server.cors.origin'),
         methods: ['GET', 'POST']
       }
     });
-    
-    this.db = new DatabaseManager();
+
+    this.db = new DatabaseManager(getConfig('database'));
     this.taskManager = new TaskManager(this.db);
     this.mcpManager = new MCPManager(this.taskManager, this.db);
     
     this.setupMiddleware();
-    this.setupRoutes();
     this.setupSocketHandlers();
     this.setupErrorHandling();
   }
@@ -44,15 +42,10 @@ class WebApplication {
     // 安全中间件
     this.app.use(helmet());
     this.app.use(compression());
-    this.app.use(cors(config.get('server.cors')));
+    this.app.use(cors(getConfig('server.cors')));
     
-    // 限流
-    const limiter = rateLimit({
-      windowMs: 15 * 60 * 1000, // 15分钟
-      max: 1000, // 限制每个IP 1000次请求
-      message: 'Too many requests from this IP'
-    });
-    this.app.use(limiter);
+    // 限流（暂时禁用，因为express-rate-limit包不存在）
+    // 如果需要限流功能，请安装express-rate-limit包
     
     // 请求解析
     this.app.use(express.json({ limit: '10mb' }));
@@ -71,7 +64,7 @@ class WebApplication {
   /**
    * 设置路由
    */
-  setupRoutes() {
+  async setupRoutes() {
     // 健康检查
     this.app.get('/health', async (req, res) => {
       const packageJson = await import('../../package.json', { with: { type: 'json' } });
@@ -83,10 +76,14 @@ class WebApplication {
       });
     });
 
-    // MCP API路由
-    this.app.use('/api/mcp', (await import('./routes/mcp.js')).default(this.mcpManager));
-    this.app.use('/api/admin', (await import('./routes/admin.js')).default(this.db, this.taskManager));
-    this.app.use('/api/dashboard', (await import('./routes/api.js')).default(this.db, this.taskManager));
+    // MCP API路由 - 动态导入
+    const mcpRoutes = (await import('./routes/mcp.js')).default;
+    const adminRoutes = (await import('./routes/admin.js')).default;
+    const apiRoutes = (await import('./routes/api.js')).default;
+
+    this.app.use('/api/mcp', mcpRoutes(this.mcpManager));
+    this.app.use('/api/admin', adminRoutes(this.db, this.taskManager));
+    this.app.use('/api/dashboard', apiRoutes(this.db, this.taskManager));
 
     // 静态文件服务
     this.app.use(express.static('public'));
@@ -195,10 +192,14 @@ class WebApplication {
       await this.taskManager.initialize();
       logger.info('任务管理器初始化完成');
 
+      // 设置路由（需要异步导入）
+      await this.setupRoutes();
+      logger.info('路由设置完成');
+
       // 启动服务器
-      const port = config.get('server.port');
-      const host = config.get('server.host');
-      
+      const port = getConfig('server.port');
+      const host = getConfig('server.host');
+
       this.server.listen(port, host, () => {
         logger.info(`服务器启动成功`, {
           host,
