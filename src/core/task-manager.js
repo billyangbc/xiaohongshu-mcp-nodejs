@@ -3,11 +3,11 @@
  * 负责任务调度、管理和执行监控
  */
 
-const { EventEmitter } = require('events');
-const { v4: uuidv4 } = require('uuid');
-const cron = require('node-cron');
-const logger = require('../utils/logger');
-const TaskExecutor = require('./task-executor');
+import { EventEmitter } from 'events';
+import { v4 as uuidv4 } from 'uuid';
+import cron from 'node-cron';
+import { logger } from '../utils/logger.js';
+import TaskExecutor from './task-executor.js';
 
 class TaskManager extends EventEmitter {
   constructor(databaseManager, browserManager) {
@@ -534,4 +534,4 @@ class TaskManager extends EventEmitter {
   }
 }
 
-module.exports = TaskManager;
+export default TaskManager;

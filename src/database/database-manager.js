@@ -3,8 +3,8 @@
  * 提供统一的数据库访问接口，支持MySQL连接池和查询封装
  */
 
-const mysql = require('mysql2/promise');
-const logger = require('../utils/logger');
+import mysql from 'mysql2/promise';
+import { logger } from '../utils/logger.js';
 
 class DatabaseManager {
   constructor(config) {
@@ -515,4 +515,4 @@ class DatabaseManager {
   }
 }
 
-module.exports = DatabaseManager;
+export default DatabaseManager;

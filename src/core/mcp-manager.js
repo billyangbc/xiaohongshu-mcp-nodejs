@@ -3,8 +3,8 @@
  * 实现JSON-RPC 2.0协议，提供小红书操作的标准MCP接口
  */
 
-const { EventEmitter } = require('events');
-const logger = require('../utils/logger');
+import { EventEmitter } from 'events';
+import { logger } from '../utils/logger.js';
 
 class MCPManager extends EventEmitter {
   constructor(options) {
@@ -834,8 +834,9 @@ class MCPManager extends EventEmitter {
    * 获取系统配置
    */
   async getSystemConfig() {
+    const packageJson = await import('../../package.json', { with: { type: 'json' } });
     return {
-      version: require('../../package.json').version,
+      version: packageJson.default.version,
       features: {
         accountManagement: true,
         contentPublishing: true,
@@ -929,4 +930,4 @@ class MCPManager extends EventEmitter {
   }
 }
 
-module.exports = MCPManager;
+export default MCPManager;

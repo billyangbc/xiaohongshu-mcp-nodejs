@@ -3,18 +3,18 @@
  * Express + Socket.IO服务器，提供MCP API和管理界面
  */
 
-const express = require('express');
-const http = require('http');
-const socketIo = require('socket.io');
-const cors = require('cors');
-const helmet = require('helmet');
-const compression = require('compression');
-const rateLimit = require('express-rate-limit');
-const logger = require('../utils/logger');
-const MCPManager = require('../core/mcp-manager');
-const TaskManager = require('../core/task-manager');
-const DatabaseManager = require('../core/database-manager');
-const config = require('../config/config-manager');
+import express from 'express';
+import http from 'http';
+import { Server as socketIo } from 'socket.io';
+import cors from 'cors';
+import helmet from 'helmet';
+import compression from 'compression';
+import rateLimit from 'express-rate-limit';
+import { logger } from '../utils/logger.js';
+import MCPManager from '../core/mcp-manager.js';
+import TaskManager from '../core/task-manager.js';
+import DatabaseManager from '../core/database-manager.js';
+import config from '../config/config-manager.js';
 
 class WebApplication {
   constructor() {
@@ -73,19 +73,20 @@ class WebApplication {
    */
   setupRoutes() {
     // 健康检查
-    this.app.get('/health', (req, res) => {
+    this.app.get('/health', async (req, res) => {
+      const packageJson = await import('../../package.json', { with: { type: 'json' } });
       res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
-        version: require('../../package.json').version
+        version: packageJson.default.version
       });
     });
 
     // MCP API路由
-    this.app.use('/api/mcp', require('./routes/mcp')(this.mcpManager));
-    this.app.use('/api/admin', require('./routes/admin')(this.db, this.taskManager));
-    this.app.use('/api/dashboard', require('./routes/api')(this.db, this.taskManager));
+    this.app.use('/api/mcp', (await import('./routes/mcp.js')).default(this.mcpManager));
+    this.app.use('/api/admin', (await import('./routes/admin.js')).default(this.db, this.taskManager));
+    this.app.use('/api/dashboard', (await import('./routes/api.js')).default(this.db, this.taskManager));
 
     // 静态文件服务
     this.app.use(express.static('public'));
@@ -245,9 +246,9 @@ class WebApplication {
 }
 
 // 启动应用
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   const app = new WebApplication();
   app.start();
 }
 
-module.exports = WebApplication;
+export default WebApplication;

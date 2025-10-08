@@ -3,10 +3,10 @@
  * 支持并发执行、重试机制、状态追踪和结果收集
  */
 
-const { EventEmitter } = require('events');
-const Bull = require('bull');
-const cron = require('node-cron');
-const logger = require('../utils/logger');
+import { EventEmitter } from 'events';
+import Bull from 'bull';
+import cron from 'node-cron';
+import { logger } from '../utils/logger.js';
 
 class TaskExecutor extends EventEmitter {
   constructor(options) {
@@ -872,4 +872,4 @@ class TaskExecutor extends EventEmitter {
   }
 }
 
-module.exports = TaskExecutor;
+export default TaskExecutor;

@@ -6,7 +6,8 @@
       "Bash(rmdir:*)",
       "Bash(docker-compose down:*)",
       "Bash(docker-compose build:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(npm start)"
     ],
     "deny": [],
     "ask": []
