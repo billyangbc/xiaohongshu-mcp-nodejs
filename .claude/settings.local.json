@@ -9,7 +9,8 @@
       "Bash(node:*)",
       "Bash(npm start)",
       "Bash(docker-compose up:*)",
-      "Bash(docker-compose logs:*)"
+      "Bash(docker-compose logs:*)",
+      "Bash(docker-compose stop:*)"
     ],
     "deny": [],
     "ask": []
