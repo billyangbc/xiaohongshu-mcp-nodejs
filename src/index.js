@@ -3,16 +3,22 @@
  * 启动和管理整个MCP服务器系统
  */
 
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import dotenv from 'dotenv';
 
-const logger = require('./utils/logger');
-const config = require('./config/config');
-const DatabaseManager = require('./database/database-manager');
-const MCPManager = require('./core/mcp-manager');
-const WebApplication = require('./web/app');
-const TaskExecutor = require('./core/task-executor');
-const BrowserManager = require('./core/browser-manager');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+dotenv.config({ path: join(__dirname, '..', '.env') });
+
+import { logger } from './utils/logger.js';
+import config from './config/config.js';
+import DatabaseManager from './database/database-manager.js';
+import MCPManager from './core/mcp-manager.js';
+import WebApplication from './web/app.js';
+import TaskExecutor from './core/task-executor.js';
+import BrowserManager from './core/browser-manager.js';
 
 class XiaohongshuMCPServer {
   constructor() {
@@ -320,12 +326,10 @@ class XiaohongshuMCPServer {
 }
 
 // 如果直接运行此文件
-if (require.main === module) {
-  const server = new XiaohongshuMCPServer();
-  server.start().catch(error => {
-    logger.error('❌ 启动失败', { error: error.message });
-    process.exit(1);
-  });
-}
+const server = new XiaohongshuMCPServer();
+server.start().catch(error => {
+  logger.error('❌ 启动失败', { error: error.message });
+  process.exit(1);
+});
 
-module.exports = XiaohongshuMCPServer;
+export default XiaohongshuMCPServer;

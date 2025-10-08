@@ -3,7 +3,11 @@
  * 集中管理所有配置参数，支持环境变量覆盖
  */
 
-const path = require('path');
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // 基础配置
 const baseConfig = {
@@ -42,7 +46,7 @@ const baseConfig = {
   // 日志配置
   logger: {
     level: process.env.LOG_LEVEL || 'info',
-    dir: process.env.LOG_DIR || path.join(process.cwd(), 'logs'),
+    dir: process.env.LOG_DIR || join(process.cwd(), 'logs'),
     maxFiles: parseInt(process.env.LOG_MAX_FILES) || 5,
     maxSize: parseInt(process.env.LOG_MAX_SIZE) || 10 * 1024 * 1024 // 10MB
   },
@@ -56,7 +60,7 @@ const baseConfig = {
       width: parseInt(process.env.BROWSER_VIEWPORT_WIDTH) || 1920,
       height: parseInt(process.env.BROWSER_VIEWPORT_HEIGHT) || 1080
     },
-    userDataDir: process.env.BROWSER_USER_DATA_DIR || path.join(process.cwd(), 'user_data'),
+    userDataDir: process.env.BROWSER_USER_DATA_DIR || join(process.cwd(), 'user_data'),
     executablePath: process.env.BROWSER_EXECUTABLE_PATH || null,
     args: [
       '--no-sandbox',
@@ -219,7 +223,7 @@ const baseConfig = {
   storage: {
     type: process.env.STORAGE_TYPE || 'local', // local, s3, oss
     local: {
-      path: process.env.STORAGE_LOCAL_PATH || path.join(process.cwd(), 'uploads')
+      path: process.env.STORAGE_LOCAL_PATH || join(process.cwd(), 'uploads')
     },
     s3: {
       region: process.env.S3_REGION || 'us-east-1',
@@ -370,7 +374,7 @@ if (validationErrors.length > 0) {
   validationErrors.forEach(error => console.warn(`  - ${error}`));
 }
 
-module.exports = {
+export default {
   ...config,
   validate: validateConfig,
   reload: getConfig
