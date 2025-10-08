@@ -444,15 +444,32 @@ class BrowserManager {
   }
 
   /**
+   * 初始化浏览器管理器
+   */
+  async initialize() {
+    // 浏览器管理器不需要特殊的初始化逻辑
+    // 实例会在需要时按需创建
+    logger.info('浏览器管理器初始化完成');
+  }
+
+  /**
+   * 清理浏览器管理器
+   */
+  async cleanup() {
+    await this.closeAllInstances();
+    logger.info('浏览器管理器清理完成');
+  }
+
+  /**
    * 关闭所有实例
    */
   async closeAllInstances() {
     const instanceIds = Array.from(this.instances.keys());
-    
+
     for (const instanceId of instanceIds) {
       await this.closeInstance(instanceId);
     }
-    
+
     logger.info('所有浏览器实例已关闭');
   }
 
