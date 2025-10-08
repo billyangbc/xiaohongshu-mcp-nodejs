@@ -3,10 +3,10 @@
  * 负责浏览器实例管理、指纹生成、代理配置和反风控策略
  */
 
-const { chromium, firefox, webkit } = require('playwright');
-const stealth = require('puppeteer-extra-plugin-stealth');
-const { FingerprintGenerator } = require('./fingerprint-generator');
-const logger = require('../utils/logger');
+import { chromium, firefox, webkit } from 'playwright';
+import stealth from 'puppeteer-extra-plugin-stealth';
+import { FingerprintGenerator } from './fingerprint-generator.js';
+import { logger } from '../utils/logger.js';
 
 class BrowserManager {
   constructor(options = {}) {
@@ -469,4 +469,4 @@ class BrowserManager {
   }
 }
 
-module.exports = BrowserManager;
+export default BrowserManager;

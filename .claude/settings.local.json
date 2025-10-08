@@ -3,7 +3,10 @@
     "allow": [
       "Bash(rm:*)",
       "Bash(npm install:*)",
-      "Bash(rmdir:*)"
+      "Bash(rmdir:*)",
+      "Bash(docker-compose down:*)",
+      "Bash(docker-compose build:*)",
+      "Bash(node:*)"
     ],
     "deny": [],
     "ask": []
