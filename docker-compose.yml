@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # 小红书MCP主服务
   xiaohongshu-mcp:
@@ -73,7 +71,7 @@ services:
 
   # Directus管理后台
   directus:
-    image: directus/directus:11.12.0-mysql
+    image: directus/directus:latest
     container_name: xiaohongshu-directus
     ports:
       - "8055:8055"
@@ -90,6 +88,7 @@ services:
       - DATABASE_PASSWORD=xiaohongshu123
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - EXTENSIONS_AUTO_RELOAD=true
     volumes:
       - directus_uploads:/directus/uploads
     depends_on:

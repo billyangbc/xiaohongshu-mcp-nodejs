@@ -2,6 +2,7 @@
   "name": "xiaohongshu-mcp-nodejs",
   "version": "1.0.0",
   "description": "小红书MCP服务器 - Node.js版本，支持多账号矩阵管理和反风控功能",
+  "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
