@@ -49,8 +49,8 @@ class XiaohongshuMCPServer {
       // 初始化数据库
       await this.initializeDatabase();
 
-      // 初始化浏览器管理器 - 暂时禁用
-      // await this.initializeBrowserManager();
+      // 浏览器管理器已禁用
+      this.browserManager = null;
 
       // 初始化任务执行器
       await this.initializeTaskExecutor();

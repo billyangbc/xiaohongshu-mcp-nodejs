@@ -3,8 +3,8 @@
  * 处理JSON-RPC 2.0格式的MCP请求
  */
 
-const express = require('express');
-const logger = require('../../utils/logger');
+import express from 'express';
+import { logger } from '../../utils/logger.js';
 
 function createMCPRoutes(mcpManager) {
   const router = express.Router();
@@ -216,4 +216,4 @@ function createMCPRoutes(mcpManager) {
   return router;
 }
 
-module.exports = createMCPRoutes;
+export default createMCPRoutes;

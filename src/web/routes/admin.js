@@ -3,11 +3,11 @@
  * 提供系统管理、配置更新、监控等功能
  */
 
-const express = require('express');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs').promises;
-const logger = require('../../utils/logger');
+import express from 'express';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs/promises';
+import { logger } from '../../utils/logger.js';
 
 function createAdminRoutes(databaseManager, taskManager, configManager) {
   const router = express.Router();
@@ -402,4 +402,4 @@ function createAdminRoutes(databaseManager, taskManager, configManager) {
   return router;
 }
 
-module.exports = createAdminRoutes;
+export default createAdminRoutes;

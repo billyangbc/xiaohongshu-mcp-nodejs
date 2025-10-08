@@ -3,8 +3,8 @@
  * 提供管理后台所需的各种数据接口
  */
 
-const express = require('express');
-const logger = require('../../utils/logger');
+import express from 'express';
+import { logger } from '../../utils/logger.js';
 
 function createAPIRoutes(databaseManager, taskManager) {
   const router = express.Router();
@@ -281,7 +281,7 @@ function createAPIRoutes(databaseManager, taskManager) {
         memory: process.memoryUsage(),
         cpu: process.cpuUsage(),
         timestamp: new Date().toISOString(),
-        version: require('../../../package.json').version
+        version: (await import('../../../package.json', { with: { type: 'json' } })).default.version
       };
 
       res.json({ success: true, data: status });
@@ -325,4 +325,4 @@ function createAPIRoutes(databaseManager, taskManager) {
   return router;
 }
 
-module.exports = createAPIRoutes;
+export default createAPIRoutes;

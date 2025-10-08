@@ -20,6 +20,8 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./uploads:/app/uploads
+      - ./src:/app/src
+      - ./public:/app/public
     depends_on:
       mysql:
         condition: service_healthy

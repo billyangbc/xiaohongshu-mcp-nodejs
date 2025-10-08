@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小红书MCP管理界面</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 40px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        .status {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .endpoints {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        .endpoint {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .endpoint a {
+            color: #fff;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .endpoint a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 小红书MCP服务器</h1>
+
+        <div class="status">
+            <h2>✅ 系统状态</h2>
+            <p><strong>状态:</strong> 运行中</p>
+            <p><strong>端口:</strong> 3000</p>
+            <p><strong>启动时间:</strong> <span id="uptime">计算中...</span></p>
+        </div>
+
+        <div class="endpoints">
+            <div class="endpoint">
+                <h3>🔧 MCP API</h3>
+                <p><a href="/api/mcp" target="_blank">/api/mcp</a></p>
+            </div>
+            <div class="endpoint">
+                <h3>📊 管理后台</h3>
+                <p><a href="/api/admin" target="_blank">/api/admin</a></p>
+            </div>
+            <div class="endpoint">
+                <h3>📈 数据看板</h3>
+                <p><a href="/api/dashboard" target="_blank">/api/dashboard</a></p>
+            </div>
+            <div class="endpoint">
+                <h3>📚 API文档</h3>
+                <p><a href="/api/docs" target="_blank">/api/docs</a></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 计算运行时间
+        function updateUptime() {
+            const startTime = new Date('2025-10-08T03:46:58Z');
+            const now = new Date();
+            const diff = now - startTime;
+
+            const hours = Math.floor(diff / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+            document.getElementById('uptime').textContent =
+                `${hours}小时 ${minutes}分钟 ${seconds}秒`;
+        }
+
+        updateUptime();
+        setInterval(updateUptime, 1000);
+    </script>
+</body>
+</html>

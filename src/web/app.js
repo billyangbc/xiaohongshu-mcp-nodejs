@@ -16,22 +16,30 @@ import DatabaseManager from '../database/database-manager.js';
 import { getConfig } from '../config/config-manager.js';
 
 class WebApplication {
-  constructor() {
+  constructor(options = {}) {
+    console.log('WebApplication constructor called');
+    this.options = options;
     this.app = express();
-    this.server = http.createServer(this.app);
-    this.io = socketIo(this.server, {
-      cors: {
-        origin: getConfig('server.cors.origin'),
-        methods: ['GET', 'POST']
-      }
-    });
 
-    this.db = new DatabaseManager(getConfig('database'));
-    this.taskManager = new TaskManager(this.db);
-    this.mcpManager = new MCPManager(this.taskManager, this.db);
-    
+    try {
+      this.server = http.createServer(this.app);
+      console.log('HTTP server created successfully');
+    } catch (error) {
+      console.error('Error creating HTTP server:', error);
+      throw error;
+    }
+
+    // Temporarily disable Socket.IO to isolate the issue
+    this.io = null;
+    console.log('Socket.IO disabled for testing');
+
+    // Use provided managers or create new ones
+    this.db = options.dbManager || new DatabaseManager(getConfig('database'));
+    this.taskManager = options.taskExecutor || new TaskManager(this.db);
+    this.mcpManager = options.mcpManager || new MCPManager(this.taskManager, this.db);
+
     this.setupMiddleware();
-    this.setupSocketHandlers();
+    // this.setupSocketHandlers(); // Disabled for now
     this.setupErrorHandling();
   }
 
@@ -65,8 +73,11 @@ class WebApplication {
    * 设置路由
    */
   async setupRoutes() {
+    console.log('开始设置路由...');
+
     // 健康检查
     this.app.get('/health', async (req, res) => {
+      console.log('健康检查端点被调用');
       const packageJson = await import('../../package.json', { with: { type: 'json' } });
       res.json({
         status: 'healthy',
@@ -77,26 +88,35 @@ class WebApplication {
     });
 
     // MCP API路由 - 动态导入
+    console.log('导入路由模块...');
     const mcpRoutes = (await import('./routes/mcp.js')).default;
     const adminRoutes = (await import('./routes/admin.js')).default;
     const apiRoutes = (await import('./routes/api.js')).default;
+    console.log('路由模块导入完成');
 
     this.app.use('/api/mcp', mcpRoutes(this.mcpManager));
     this.app.use('/api/admin', adminRoutes(this.db, this.taskManager));
     this.app.use('/api/dashboard', apiRoutes(this.db, this.taskManager));
+    console.log('API路由设置完成');
 
     // 静态文件服务
+    console.log('设置静态文件服务...');
     this.app.use(express.static('public'));
-    
+    console.log('静态文件服务设置完成');
+
     // 管理界面
     this.app.get('/', (req, res) => {
+      console.log('根路径被访问');
       res.sendFile('index.html', { root: 'public' });
     });
 
     // API文档
     this.app.get('/docs', (req, res) => {
+      console.log('API文档端点被访问');
       res.json(this.mcpManager.getMethods());
     });
+
+    console.log('所有路由设置完成');
   }
 
   /**
@@ -197,8 +217,8 @@ class WebApplication {
       logger.info('路由设置完成');
 
       // 启动服务器
-      const port = getConfig('server.port');
-      const host = getConfig('server.host');
+      const port = this.options?.config?.app?.port || getConfig('server.port');
+      const host = this.options?.config?.app?.host || getConfig('server.host');
 
       this.server.listen(port, host, () => {
         logger.info(`服务器启动成功`, {

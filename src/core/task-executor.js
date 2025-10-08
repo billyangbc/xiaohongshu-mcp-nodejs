@@ -135,9 +135,9 @@ class TaskExecutor extends EventEmitter {
     
     try {
       // 插入任务到数据库
-      const [result] = await this.dbManager.query(
-        `INSERT INTO idea_xiaohongshu_tasks 
-         (task_type, account_id, task_data, cron_expression, priority, scheduled_time) 
+      const result = await this.dbManager.query(
+        `INSERT INTO idea_xiaohongshu_tasks
+         (task_type, account_id, task_data, cron_expression, priority, scheduled_time)
          VALUES (?, ?, ?, ?, ?, ?)`,
         [type, accountId, JSON.stringify(data), cronExpression, priority, scheduledTime]
       );
@@ -210,7 +210,7 @@ class TaskExecutor extends EventEmitter {
   async executeAccountLogin({ taskId, accountId, method, credentials }) {
     try {
       // 获取账号信息
-      const [accounts] = await this.dbManager.query(
+      const accounts = await this.dbManager.query(
         'SELECT * FROM idea_xiaohongshu_accounts WHERE id = ?',
         [accountId]
       );
@@ -220,14 +220,14 @@ class TaskExecutor extends EventEmitter {
       }
 
       const account = accounts[0];
-      
+
       // 获取代理和指纹信息
-      const [proxies] = await this.dbManager.query(
+      const proxies = await this.dbManager.query(
         'SELECT * FROM idea_xiaohongshu_proxies WHERE id = ?',
         [account.proxy_id]
       );
 
-      const [fingerprints] = await this.dbManager.query(
+      const fingerprints = await this.dbManager.query(
         'SELECT * FROM idea_xiaohongshu_fingerprints WHERE id = ?',
         [account.fingerprint_id]
       );
@@ -270,7 +270,7 @@ class TaskExecutor extends EventEmitter {
   async executePostPublish({ taskId, accountId, postId, immediate }) {
     try {
       // 获取账号和笔记信息
-      const [accounts] = await this.dbManager.query(
+      const accounts = await this.dbManager.query(
         'SELECT * FROM idea_xiaohongshu_accounts WHERE id = ? AND login_status = TRUE',
         [accountId]
       );
@@ -279,7 +279,7 @@ class TaskExecutor extends EventEmitter {
         throw new Error('账号不存在或未登录');
       }
 
-      const [posts] = await this.dbManager.query(
+      const posts = await this.dbManager.query(
         'SELECT * FROM idea_xiaohongshu_posts WHERE id = ? AND account_id = ?',
         [postId, accountId]
       );
@@ -328,7 +328,7 @@ class TaskExecutor extends EventEmitter {
   async executeContentSearch({ taskId, accountId, keyword, searchType, limit, sort }) {
     try {
       // 获取账号信息
-      const [accounts] = await this.dbManager.query(
+      const accounts = await this.dbManager.query(
         'SELECT * FROM idea_xiaohongshu_accounts WHERE id = ? AND login_status = TRUE',
         [accountId]
       );
@@ -372,7 +372,7 @@ class TaskExecutor extends EventEmitter {
   async executeUserInfo({ taskId, accountId, userId }) {
     try {
       // 获取账号信息
-      const [accounts] = await this.dbManager.query(
+      const accounts = await this.dbManager.query(
         'SELECT * FROM idea_xiaohongshu_accounts WHERE id = ? AND login_status = TRUE',
         [accountId]
       );
@@ -409,7 +409,7 @@ class TaskExecutor extends EventEmitter {
   async executePostInfo({ taskId, accountId, postId }) {
     try {
       // 获取账号信息
-      const [accounts] = await this.dbManager.query(
+      const accounts = await this.dbManager.query(
         'SELECT * FROM idea_xiaohongshu_accounts WHERE id = ? AND login_status = TRUE',
         [accountId]
       );
@@ -446,7 +446,7 @@ class TaskExecutor extends EventEmitter {
   async executeCommentsFetch({ taskId, accountId, postId, limit, offset }) {
     try {
       // 获取账号信息
-      const [accounts] = await this.dbManager.query(
+      const accounts = await this.dbManager.query(
         'SELECT * FROM idea_xiaohongshu_accounts WHERE id = ? AND login_status = TRUE',
         [accountId]
       );
@@ -483,7 +483,7 @@ class TaskExecutor extends EventEmitter {
   async executeTrendingFetch({ taskId, accountId, category, limit }) {
     try {
       // 获取账号信息
-      const [accounts] = await this.dbManager.query(
+      const accounts = await this.dbManager.query(
         'SELECT * FROM idea_xiaohongshu_accounts WHERE id = ? AND login_status = TRUE',
         [accountId]
       );
@@ -521,7 +521,7 @@ class TaskExecutor extends EventEmitter {
    */
   async loadPendingTasks() {
     try {
-      const [pendingTasks] = await this.dbManager.query(
+      const pendingTasks = await this.dbManager.query(
         'SELECT * FROM idea_xiaohongshu_tasks WHERE status = "pending" AND scheduled_time <= NOW()'
       );
 
@@ -678,7 +678,7 @@ class TaskExecutor extends EventEmitter {
    */
   async getTaskStatus(taskId) {
     try {
-      const [tasks] = await this.dbManager.query(
+      const tasks = await this.dbManager.query(
         'SELECT * FROM idea_xiaohongshu_tasks WHERE id = ?',
         [taskId]
       );
