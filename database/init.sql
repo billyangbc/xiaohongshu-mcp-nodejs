@@ -2,9 +2,14 @@
 -- 创建数据库和表结构
 
 -- 创建数据库（如果不存在）
-CREATE DATABASE IF NOT EXISTS xiaohongshu_mcp 
-CHARACTER SET utf8mb4 
+CREATE DATABASE IF NOT EXISTS xiaohongshu_mcp
+CHARACTER SET utf8mb4
 COLLATE utf8mb4_unicode_ci;
+
+-- 创建应用用户并授权
+CREATE USER IF NOT EXISTS 'xiaohongshu'@'%' IDENTIFIED BY 'xiaohongshu123';
+GRANT ALL PRIVILEGES ON xiaohongshu_mcp.* TO 'xiaohongshu'@'%';
+FLUSH PRIVILEGES;
 
 USE xiaohongshu_mcp;
 

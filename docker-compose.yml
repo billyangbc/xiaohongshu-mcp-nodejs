@@ -73,21 +73,21 @@ services:
 
   # Directus管理后台
   directus:
-    image: directus/directus:10.13
+    image: directus/directus:11.12.0-mysql
     container_name: xiaohongshu-directus
     ports:
       - "8055:8055"
     environment:
-      - KEY=xiaohongshu-directus-key
-      - SECRET=xiaohongshu-directus-secret
+      - DIRECTUS_KEY=xiaohongshu-directus-key
+      - DIRECTUS_SECRET=xiaohongshu-directus-secret
       - ADMIN_EMAIL=admin@xiaohongshu.com
       - ADMIN_PASSWORD=xiaohongshu123
-      - DB_CLIENT=mysql2
-      - DB_HOST=mysql
-      - DB_PORT=3306
-      - DB_DATABASE=xiaohongshu_mcp
-      - DB_USER=xiaohongshu
-      - DB_PASSWORD=xiaohongshu123
+      - DATABASE_CLIENT=mysql2
+      - DATABASE_HOST=mysql
+      - DATABASE_PORT=3306
+      - DATABASE_NAME=xiaohongshu_mcp
+      - DATABASE_USER=xiaohongshu
+      - DATABASE_PASSWORD=xiaohongshu123
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     volumes:
