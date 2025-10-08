@@ -49,8 +49,8 @@ class XiaohongshuMCPServer {
       // 初始化数据库
       await this.initializeDatabase();
 
-      // 初始化浏览器管理器
-      await this.initializeBrowserManager();
+      // 初始化浏览器管理器 - 暂时禁用
+      // await this.initializeBrowserManager();
 
       // 初始化任务执行器
       await this.initializeTaskExecutor();
@@ -97,8 +97,14 @@ class XiaohongshuMCPServer {
         proxy: config.proxy,
         logger
       });
-      await this.browserManager.initialize();
-      logger.info('✅ 浏览器管理器初始化完成');
+
+      // 检查是否有initialize方法，如果没有则跳过
+      if (typeof this.browserManager.initialize === 'function') {
+        await this.browserManager.initialize();
+        logger.info('✅ 浏览器管理器初始化完成');
+      } else {
+        logger.info('✅ 浏览器管理器已创建（无需初始化）');
+      }
     } catch (error) {
       logger.error('❌ 浏览器管理器初始化失败', { error: error.message });
       throw error;
@@ -113,7 +119,7 @@ class XiaohongshuMCPServer {
       logger.info('⚙️ 初始化任务执行器...');
       this.taskExecutor = new TaskExecutor({
         dbManager: this.dbManager,
-        browserManager: this.browserManager,
+        browserManager: null, // 暂时禁用浏览器管理器
         config: config.task,
         logger
       });
@@ -134,7 +140,7 @@ class XiaohongshuMCPServer {
       this.mcpManager = new MCPManager({
         dbManager: this.dbManager,
         taskExecutor: this.taskExecutor,
-        browserManager: this.browserManager,
+        browserManager: null, // 暂时禁用浏览器管理器
         config: config.mcp,
         logger
       });
@@ -272,8 +278,14 @@ class XiaohongshuMCPServer {
       // 停止浏览器管理器
       if (this.browserManager) {
         logger.info('🌐 停止浏览器管理器...');
-        await this.browserManager.cleanup();
-        logger.info('✅ 浏览器管理器已停止');
+
+        // 检查是否有cleanup方法，如果没有则跳过
+        if (typeof this.browserManager.cleanup === 'function') {
+          await this.browserManager.cleanup();
+          logger.info('✅ 浏览器管理器已停止');
+        } else {
+          logger.info('✅ 浏览器管理器无需清理');
+        }
       }
 
       // 关闭数据库连接
